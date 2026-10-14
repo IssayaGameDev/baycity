@@ -772,11 +772,33 @@ const docOver = (
 
   const node = (i: number): DocNode | undefined => nodes()[i]
   /**
-   * The placement a node resolves references in, as the loader's scopes have it (stage C4): a piece's is its owner, and
-   * a placement's own is itself — the loader puts a placement's root in the scope it opens, so the prefab's root,
-   * placed, names its pieces as it did in the prefab. Anything else resolves in the level (`undefined`).
+   * The placement whose scope the loader puts each node in, by index, or `undefined` for the level's (stage C4,
+   * ADR 0219): a piece's owner; a child a placement **added** — under its root or a piece, kept in its record — that
+   * placement's, as the loader builds a placement's resolved children in the scope it opens; any other node its
+   * parent's. A placement itself is where its parent is, and opens its own. Once per walk: the walk puts parents first.
    */
-  const scopeOf = (n: DocNode): Node | undefined => n.owner ?? (n.authored.prefab !== undefined ? n.authored : undefined)
+  const homes = new WeakMap<readonly DocNode[], readonly (Node | undefined)[]>()
+  const homesOf = (all: readonly DocNode[]): readonly (Node | undefined)[] => {
+    const have = homes.get(all)
+    if (have !== undefined) return have
+    const out: (Node | undefined)[] = []
+    all.forEach((n, k) => {
+      const p = all[n.parent]
+      const added = p !== undefined && n.owner === undefined && n.siblings !== p.authored.children
+      out[k] = n.owner ?? (p === undefined ? undefined : added ? (p.owner ?? p.authored) : out[n.parent])
+    })
+    homes.set(all, out)
+    return out
+  }
+  /**
+   * The placement node `i` resolves references in, as the loader's scopes have it (stage C4): a placement's own is
+   * itself — the loader puts a placement's root in the scope it opens, so the prefab's root, placed, names its pieces as
+   * it did in the prefab — and any other node's its home (`homesOf`). `undefined`: the level.
+   */
+  const resolvesIn = (all: readonly DocNode[], i: number): Node | undefined => {
+    const n = all[i]
+    return n !== undefined && n.owner === undefined && n.authored.prefab !== undefined ? n.authored : homesOf(all)[i]
+  }
   /** A placement answers to its prefab root's id too, inside its scope: what a piece's reference to the root holds. */
   const prefabRootIdOf = (o: DocNode): string | undefined =>
     o.owner === undefined && o.authored.prefab !== undefined ? level.prefabs?.[o.authored.prefab]?.id : undefined
@@ -793,12 +815,16 @@ const docOver = (
       const placement = p === null ? undefined : all[p]
       if (placement === undefined || placement.owner !== undefined || placement.authored.prefab === undefined) return null
       if (prefabRootIdOf(placement) === path.node) return p
-      const piece = all.findIndex((o) => o.owner === placement.authored && o.authored.id === path.node)
-      return piece >= 0 ? piece : null
+      const home = homesOf(all)
+      const inside = all.findIndex((o, k) => home[k] === placement.authored && o.authored.id === path.node)
+      return inside >= 0 ? inside : null
     }
-    const scope = scopeOf(n)
-    const own = scope === undefined ? -1 : all.findIndex((o) => scopeOf(o) === scope && (o.authored.id === id || prefabRootIdOf(o) === id))
-    const at = own >= 0 ? own : all.findIndex((o) => o.owner === undefined && o.authored.id === id)
+    const home = homesOf(all)
+    const scope = resolvesIn(all, i)
+    // In its placement: the placement itself, by its own id or its prefab root's, then what lives in it; then the level.
+    const own =
+      scope === undefined ? -1 : all.findIndex((o, k) => (o.authored === scope && o.owner === undefined && (o.authored.id === id || prefabRootIdOf(o) === id)) || (home[k] === scope && o.authored.id === id))
+    const at = own >= 0 ? own : all.findIndex((o, k) => home[k] === undefined && o.authored.id === id)
     return at >= 0 ? at : null
   }
   /**
@@ -815,12 +841,23 @@ const docOver = (
     return driven.by.get(i) ?? []
   }
   /**
-   * Whether a `nodeRef` on `n` names `o` by its plain id (stage C4): anything names the level's own nodes, and a piece
-   * from inside its placement — by the placement's other pieces and by the placement itself.
+   * Whether a reference on node `k` names node `at` by its plain id (stage C4): anything names what lives in the level,
+   * and what lives in a placement — its pieces, what it added — is named so from inside it: by what else lives there and
+   * by the placement itself.
    */
-  const reaches = (n: DocNode, o: DocNode): boolean => o.owner === undefined || o.owner === scopeOf(n)
-  /** What a reference on `n` holds to name `o`: its id where it `reaches`, else by its placement (ADR 0219). */
-  const refValue = (n: DocNode, o: DocNode): string => (reaches(n, o) || o.owner === undefined ? o.authored.id : refInto(o.owner.id, o.authored.id))
+  const reaches = (all: readonly DocNode[], k: number, at: number): boolean => {
+    const home = homesOf(all)[at]
+    return home === undefined || home === resolvesIn(all, k)
+  }
+  /** What a reference on node `k` holds to name node `at`: its id where it `reaches`, else by its placement (ADR 0219). */
+  const refValue = (all: readonly DocNode[], k: number, at: number): string => {
+    const id = all[at]!.authored.id
+    const home = homesOf(all)[at]
+    return home === undefined || reaches(all, k, at) ? id : refInto(home.id, id)
+  }
+  /** What a reference on node `k` holds for a node of id `id` living in `home` — one moved, before it is there (ADR 0219). */
+  const refValueFor = (all: readonly DocNode[], k: number, id: string, home: Node | undefined): string =>
+    home === undefined || home === resolvesIn(all, k) ? id : refInto(home.id, id)
 
   /**
    * Compiled sequences, keyed by what they say rather than by object: the Inspector patches a component's
@@ -1079,7 +1116,7 @@ const docOver = (
    * copy looks right and behaves as the original's shadow, which is the worst kind of wrong. Unity remaps the
    * same way on duplicate.
    */
-  const reidSubtree = (root: Node): void => {
+  const reidSubtree = (root: Node): ReadonlyMap<string, string> => {
     const map = new Map<string, string>()
     const rename = (x: Node): void => {
       const fresh = freshId()
@@ -1118,6 +1155,7 @@ const docOver = (
       for (const kids of childListsOf(x)) for (const kid of kids) repoint(kid)
     }
     repoint(root)
+    return map
   }
 
   /**
@@ -1136,6 +1174,28 @@ const docOver = (
         }
     })
     return ops
+  }
+
+  /**
+   * The ops re-pointing every reference from outside the subtree at `from` that names a node in it, once the subtree
+   * moves under `parent` (`dst` its host) and node `j` is called `idAfter(j)` (ADR 0219): named as the loader will find
+   * it from where each reference is — by its plain id, or by the placement it then lives in. Nothing, when nothing
+   * would read differently.
+   */
+  const followMove = (from: number, parent: number | null, dst: ChildHost, idAfter: (j: number, all: readonly DocNode[]) => string | undefined): Op[] => {
+    const all = nodes()
+    const homes = homesOf(all)
+    const end = subtreeEnd(from)
+    const inside = (k: number): boolean => k >= from && k < end
+    // Where it will live: a record's placement, else wherever its new parent lives. What lives where it did goes with
+    // it; what lives in a placement inside it — a moved placement's pieces — stays there.
+    const home = dst.kind === 'record' ? dst.placement : parent === null ? undefined : homes[parent]
+    return repointOps((k, id) => {
+      const j = refTargetIn(all, k, id)
+      if (j === null || !inside(j)) return undefined
+      const after = idAfter(j, all)
+      return after === undefined ? undefined : refValueFor(all, k, after, homes[j] === homes[from] ? home : homes[j])
+    }, inside)
   }
 
   /**
@@ -1663,11 +1723,15 @@ const docOver = (
        */
       if (moving.owner !== undefined) {
         const landed = structuredClone(moving.view)
-        reidSubtree(landed)
+        const fresh = reidSubtree(landed)
         if (transform !== undefined) landed.transform = transform
-        commit([...insertOps(dst, landed, atIndex), ...removeOps(src, id)])
+        // What named it, or something under it, names the copy (ADR 0219).
+        const follow = followMove(from, parent, dst, (j, all) => fresh.get(all[j]!.authored.id))
+        commit([...insertOps(dst, landed, atIndex), ...removeOps(src, id), ...follow])
         return indexOfId(landed.id)
       }
+      // Same ids, but perhaps somewhere else to be named from — into a placement's record, or out of one (ADR 0219).
+      const follow = followMove(from, parent, dst, (j, all) => all[j]!.authored.id)
       /**
        * Between two plain lists, one `moveNode`, and the re-expressed transform in the same batch (ADR 0113):
        * undo puts the transform back before the node moves home.
@@ -1675,13 +1739,13 @@ const docOver = (
       if (src.kind === 'list' && dst.kind === 'list') {
         const ops: Op[] = [{ kind: 'moveNode', id, parent: dst.parentId, index: Math.max(0, Math.min(dst.list.length, atIndex)) }]
         if (transform !== undefined) ops.push({ kind: 'setTransform', id, transform })
-        commit(ops)
+        commit([...ops, ...follow])
         return indexOfId(id)
       }
-      // Into or out of a record: out, then in — the same node with the same ids, so references keep naming it.
+      // Into or out of a record: out, then in — the same node with the same ids, references following where it lives.
       const landed = structuredClone(moving.authored)
       if (transform !== undefined) landed.transform = transform
-      commit([...removeOps(src, id), ...insertOps(dst, landed, atIndex)])
+      commit([...removeOps(src, id), ...insertOps(dst, landed, atIndex), ...follow])
       return indexOfId(id)
     },
     assetIds: () => {
@@ -1798,14 +1862,14 @@ const docOver = (
       const n = node(i)
       if (n === undefined) return []
       const all = nodes()
-      // A piece of another placement is named by it (ADR 0219), and labelled so: two placements share piece names.
-      const placementAt = (o: DocNode): number => all.findIndex((x) => x.owner === undefined && x.authored === o.owner)
-      return all.map((o, at) => ({ id: refValue(n, o), label: reaches(n, o) ? labelAt(at) : `${labelAt(placementAt(o))} › ${labelAt(at)}` }))
+      const home = homesOf(all)
+      // What lives in another placement is named by it (ADR 0219), and labelled so: two placements share piece names.
+      const placementAt = (at: number): number => all.findIndex((x) => x.owner === undefined && x.authored === home[at])
+      return all.map((_, at) => ({ id: refValue(all, i, at), label: reaches(all, i, at) ? labelAt(at) : `${labelAt(placementAt(at))} › ${labelAt(at)}` }))
     },
     refTo: (i, j) => {
-      const n = node(i)
-      const o = node(j)
-      return n === undefined || o === undefined ? null : refValue(n, o)
+      const all = nodes()
+      return all[i] === undefined || all[j] === undefined ? null : refValue(all, i, j)
     },
     refTarget: (i, id) => refTargetIn(nodes(), i, id),
     overridesOf: (i) => describeRecord(i, true),

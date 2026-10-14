@@ -12,7 +12,7 @@ import { DEFAULT_KEYCAP_LOOK, DEFAULT_PRESS, drawKeycaps, type KeycapLook, type 
 import { createPopups, DEFAULT_POPUP, type PopupFeel } from './popups'
 import { abbreviate, experienceForLevel, levelAt, maxSpeedAt, METRES_PER_STUD, type ProgressCurve } from './progression'
 import { keyboardSession, GAME_CURVE, GAME_KEYS, spawnOf, STAND_OFFSET, type KeyboardSession, type KeyboardTeleport } from './rules'
-import { createTeleportWindow, teleportRows } from './teleportWindow'
+import { createTeleportWindow, teleportRows, type TeleportWindow } from './teleportWindow'
 import { checkpointsOf, shownText, TEXT_FADE_SECONDS, type CheckpointStop } from './components/obstacle'
 import { createStepper, stepsPerSecond } from './components/steps'
 import { Treadmill, TREADMILL_STATE, treadmillStepValue, type TreadmillTick } from './components/treadmill'
@@ -108,6 +108,8 @@ let insideOf: WorldNode | null = null
 let insideSeenMs = -Infinity
 /** How much of each obstacle text shows, 0 to 1, fading toward the one shown (ADR 0213). Hidden until shown. */
 const textShown = new Map<WorldNode, number>()
+/** The teleport window, once it is made: told when a checkpoint is reached, so an open one opens the row then. */
+let teleportWindow: TeleportWindow | null = null
 /** An Obstacle's trigger was walked into (ADR 0211): its checkpoint is reached for good, saved once. */
 const reach = (node: WorldNode): void => {
   if (levelName === null) {
@@ -120,6 +122,7 @@ const reach = (node: WorldNode): void => {
   if (next === reached) return
   reached = next
   persist()
+  teleportWindow?.refresh()
 }
 const isReached = (key: string): boolean => levelName !== null && (reached[levelName] ?? []).includes(key)
 
@@ -231,7 +234,7 @@ const hud = createHud(client, curve)
 const popups = createPopups(client, pops)
 levelName = client.levelName
 for (const node of reachedEarly.splice(0)) reach(node)
-createTeleportWindow(client, {
+teleportWindow = createTeleportWindow(client, {
   rows: () => teleportRows(start, checkpoints, isReached),
   go: (to) => {
     wantTeleport = to

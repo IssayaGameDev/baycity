@@ -1,6 +1,6 @@
 import { easeAt } from '@mp/content'
 import type { Vec3 } from '@mp/core'
-import { Container, Graphics, uiButton, uiLabel, uiList } from '@mp/render-pixi'
+import { Container, Graphics, uiButton, uiLabel, uiList, type ListItem, type UiList } from '@mp/render-pixi'
 import type { TpsClient } from '@mp/tps'
 
 import type { CheckpointStop } from './components/obstacle'
@@ -15,7 +15,8 @@ import type { KeyboardTeleport } from './rules'
  *
  * Open, the mouse is free (`holdCursor`) and you can still walk: only the camera stops turning. T opens it on a
  * keyboard; on touch the button is tapped. A checkpoint not yet reached is listed greyed and cannot be picked
- * (ADR 0211, Kodjo's call). Paying for one comes later.
+ * (ADR 0211, Kodjo's call), and opens in place when it is reached with the window up (`refresh`). Paying for one
+ * comes later.
  */
 
 /** One row: what it says, where it sends you, and whether it is shut. */
@@ -68,6 +69,8 @@ export interface TeleportWindowOptions {
 }
 
 export interface TeleportWindow {
+  /** Read the rows again, if it is open — a checkpoint reached while it is up opens there and then, the list's scroll kept. */
+  refresh: () => void
   dispose: () => void
 }
 
@@ -109,6 +112,20 @@ export const createTeleportWindow = (client: TpsClient, opts: TeleportWindowOpti
   /** What the box was built for. */
   let built: { height: number; count: number } | null = null
   let boxH = 0
+  /** The list the box holds, while it is built. */
+  let list: UiList | null = null
+  const itemsOf = (): ListItem[] =>
+    rows.map((row) =>
+      row.locked
+        ? { text: row.label, muted: true }
+        : {
+            text: row.label,
+            onPick: () => {
+              opts.go(row.to)
+              close()
+            },
+          },
+    )
 
   const build = (overlayH: number, k: number): void => {
     const fits = BASE.header + rows.length * BASE.row + BASE.padding
@@ -123,22 +140,11 @@ export const createTeleportWindow = (client: TpsClient, opts: TeleportWindowOpti
     title.position.set(BASE.padding + 4, (BASE.header - title.height) / 2)
     const x = uiButton({ label: '✕', width: BASE.close, height: BASE.close, color: 0x475569, onClick: close })
     x.view.position.set(BASE.boxWidth - BASE.padding - BASE.close, (BASE.header - BASE.close) / 2)
-    const list = uiList({ width: BASE.boxWidth - 2 * BASE.padding, height: boxH - BASE.header - BASE.padding, rowHeight: BASE.row, textSize: BASE.rowText })
-    list.view.position.set(BASE.padding, BASE.header)
-    list.setItems(
-      rows.map((row) =>
-        row.locked
-          ? { text: row.label, muted: true }
-          : {
-              text: row.label,
-              onPick: () => {
-                opts.go(row.to)
-                close()
-              },
-            },
-      ),
-    )
-    box.addChild(back, title, x.view, list.view)
+    const made = uiList({ width: BASE.boxWidth - 2 * BASE.padding, height: boxH - BASE.header - BASE.padding, rowHeight: BASE.row, textSize: BASE.rowText })
+    made.view.position.set(BASE.padding, BASE.header)
+    made.setItems(itemsOf())
+    list = made
+    box.addChild(back, title, x.view, made.view)
   }
 
   const toggle = (): void => {
@@ -171,6 +177,13 @@ export const createTeleportWindow = (client: TpsClient, opts: TeleportWindowOpti
   })
 
   return {
+    refresh: () => {
+      if (!open) return
+      rows = opts.rows()
+      // Same rows, new states: in place, so the list stays where it was scrolled. Another count is a new box.
+      if (built !== null && built.count === rows.length && list !== null) list.setItems(itemsOf())
+      else built = null
+    },
     dispose: () => {
       close()
       stopFrame()

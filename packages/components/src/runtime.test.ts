@@ -455,6 +455,26 @@ describe('node references (stage C4)', () => {
     expect(log.sort()).toEqual(['link:anchor->anchor', 'link:level->anchor'])
   })
 
+  /** What a placement adds under its root lives in the placement, as its pieces do (ADR 0219): from the level, by it. */
+  it('finds a child a placement added only by the placement, from the level', () => {
+    const prefab: Node = { id: 'root', name: 'one', transform: { position: vec3(0, 0, 0) }, components: [] }
+    const level: Level = {
+      id: 'fx',
+      config: {},
+      prefabs: { one: prefab },
+      nodes: [
+        { id: 'placed', transform: { position: vec3(0, 0, 0) }, components: [], prefab: 'one', overrides: { root: { addedChildren: [{ id: 'kid', transform: { position: vec3(1, 0, 0) }, components: [] }] } } },
+        { id: 'level', transform: { position: vec3(0, 5, 0) }, components: [] },
+      ],
+    }
+    const loaded = loadWith(level)
+    const from = loaded.allNodes.find((n) => n.id === 'level')!
+    const kid = loaded.allNodes.find((n) => n.id === 'kid')!
+    expect(loaded.findNode(from, 'placed/kid')).toBe(kid)
+    expect(loaded.findNode(from, 'kid'), 'not the level’s').toBeUndefined()
+    expect(loaded.findNode(kid, 'kid'), 'its own placement’s').toBe(kid)
+  })
+
   it('lets a reference set on a placement reach a level node, since that override lives in the level', () => {
     const prefab: Node = { id: 'root', name: 'one', transform: { position: vec3(0, 0, 0) }, components: [], children: [{ id: 'inner', transform: { position: vec3(0, 0, 0) }, components: [] }] }
     const level: Level = {

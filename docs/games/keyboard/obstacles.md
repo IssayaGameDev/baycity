@@ -70,8 +70,9 @@ behind (`OrbitCamera.face`). To Start: the spawn (`spawnOf`), no yaw, `obstacle:
 ## The window (ADR 0203, Kodjo's calls)
 
 `createTeleportWindow(client, { rows, go })`, wired in `main.ts`: `rows = teleportRows(start, checkpoints, isReached)` —
-Start, then `Checkpoint N` per stop — asked as it opens. `TeleportRow { label, to, locked }`: `locked` = not
-reached — drawn `muted` (greyed), no `onPick`.
+Start, then `Checkpoint N` per stop — asked as it opens, and again when one is reached while it is open
+(`TeleportWindow.refresh()`, from `reach`): the rows set in place, the list's scroll kept. `TeleportRow { label, to,
+locked }`: `locked` = not reached — drawn `muted` (greyed), no `onPick`.
 
 | | |
 | --- | --- |

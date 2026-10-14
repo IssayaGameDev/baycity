@@ -27,8 +27,8 @@ Package `packages/components`. Headless; deps `@mp/content`, `@mp/core` (`@mp/ph
 **Reference scope** (`LoadedLevel.findNode`; the editor's `refTarget` in `editorDoc.ts` resolves the same): a plain id
 — a level node names level nodes; a node a placement inherited names its own placement's nodes, then the level's.
 **Into a placement** (ADR 0219): `<placement id>/<node id>` (`refInto`, `refPathOf`, `packages/content/src/refPath.ts`)
-— the placement found as a plain id is, then the node by its prefab id in the scope that placement opens; the prefab's
-root id names the placement. From the level or from another placement. Unlink, Save as prefab and duplicate keep it
+— the placement found as a plain id is, then the node in the scope that placement opens: a piece by its prefab id, or
+a child the placement added (it lives there too, ADR 0220); the prefab's root id names the placement. From the level or from another placement. Unlink, Save as prefab and duplicate keep it
 naming the same object (`content.md`, `editor.md`).
 
 `readParams(decls, raw, at): Params<D>` — absent key → default; unknown key dropped; throws `ComponentError`. `defaultsOf`, `Params<D>`, `ParamDecls`, `RawParams`.

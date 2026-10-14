@@ -751,6 +751,53 @@ describe('node references (stage C4)', () => {
       expect(doc.label(found!)).toBe('inner')
     })
 
+    it('names a child the placement added by the placement from the level, as the game finds it', () => {
+      const level = blank()
+      const doc = levelDoc(level, REG)
+      const root = placeRef(doc, vec3(0, 0, 0))
+      const kid = doc.placeEmpty(vec3(1, 0, 0), root)
+      const w = doc.placeModel('m', vec3(5, 0, 0))
+      const p = level.nodes[0]!
+      const kidId = p.overrides!.root!.addedChildren![0]!.id
+      expect(doc.refTo(w, kid)).toBe(`${p.id}/${kidId}`)
+      expect(doc.refTarget(w, `${p.id}/${kidId}`)).toBe(kid)
+      expect(doc.refTarget(w, kidId), 'not by its plain id: the game would not find it').toBeNull()
+      expect(doc.refTo(pieceOf(doc, root), kid), 'from inside the placement, plainly').toBe(kidId)
+      expect(doc.refTarget(pieceOf(doc, root), kidId)).toBe(kid)
+    })
+
+    it('names the copy when the piece it named is dragged out of its placement, in the same edit', () => {
+      const { doc, target } = pointedInto()
+      const batches: number[] = []
+      doc.onOps = (batch) => void batches.push(batch.ops.length)
+      const copy = doc.reparent(pieceOf(doc, 0), null, 2)
+      expect(batches).toHaveLength(1)
+      expect(target(), 'a plain id: the copy lives in the level').not.toContain('/')
+      expect(doc.refTarget(named(doc, 'watcher'), target() as string)).toBe(copy)
+      expect(doc.kindOf(copy)).toBe('own')
+    })
+
+    it('names a level object by the placement once moved into it, and plainly once moved out', () => {
+      const level = blank()
+      const doc = levelDoc(level, REG)
+      placeRef(doc, vec3(0, 0, 0))
+      const x = doc.placeModel('m', vec3(2, 0, 0))
+      doc.setName(x, 'x')
+      const w = doc.placeModel('m', vec3(5, 0, 0))
+      doc.setName(w, 'watcher')
+      doc.addComponent(w, Linked.type)
+      const xId = level.nodes[1]!.id
+      doc.setParams(w, idOf(doc, w, Linked.type), { target: xId })
+      const target = (): unknown => doc.components(named(doc, 'watcher')).find((c) => c.type === Linked.type)?.params.target
+      const pId = level.nodes[0]!.id
+
+      doc.reparent(named(doc, 'x'), 0, 0)
+      expect(target(), 'into the placement: by it').toBe(`${pId}/${xId}`)
+      expect(doc.refTarget(named(doc, 'watcher'), target() as string)).toBe(named(doc, 'x'))
+      doc.reparent(named(doc, 'x'), null, 0)
+      expect(target(), 'out again: plainly').toBe(xId)
+    })
+
     it('follows a duplicated placement duplicated with it', () => {
       const { level, doc } = pointedInto()
       const holder = doc.placeModel('m', vec3(0, 0, 9))
