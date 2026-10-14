@@ -18,6 +18,7 @@ Package `packages/mode` (`@mp/mode`). Headless: no renderer import; gizmo colour
 | `player?` | `readonly ComponentData[]` | Components the player carries at runtime, validated against `registry` (ADR 0059). Absent = none. |
 | `playerDefs?` | `(host: PlayerHost) => readonly ComponentDef[]` | Session-bound definitions for the `player` list, closing over the live character (ADR 0061). Must agree with `player` by type — a mismatch logs `console.error` in `createComponentRuntime`. Absent = player components are data only (`Death`). |
 | `actions?` | `ActionBindings` | Game's own controls. Absent = move + jump only. |
+| `balance?` | `BalanceDecl` (`src/balance.ts`) | The games window's Balance tab (ADR 0225): `options` (number settings, the imagined player) and `report({ settings, levels: BalanceLevel[], options }) → { groups: { title, moments: { label, targetS, simulatedS }[] }[], notes }`, synchronous — it re-runs as you type. Absent = no tab. Keyboard: `KEYBOARD_BALANCE`. |
 | `session` | `(loaded: LoadedLevel, opts?: ModeSessionOptions) => ModeSession` | Begin the rules over one loaded level. |
 
 No level-settings block: a rule is a component (ADR 0053).
@@ -114,4 +115,4 @@ sampleCurve(points, x, { interpolation, beyond })   // before the first point: i
 normalizePoints(raw): CurvePoint[] | null  // sorted, deduped, finite
 ```
 
-Stored in `content/<game>/game.json` → `settings`; edited in the editor's games window, Settings (a graph per curve, `editor.md`, ADR 0162). Keyboard: `CURVE_SETTINGS`, five curves, and `PAD_SETTINGS`, the step-pad table (`docs/games/keyboard/balance.md`, ADR 0087/0088, ADR 0222).
+Stored in `content/<game>/game.json` → `settings`; edited in the editor's games window, Settings (a graph per curve, `editor.md`, ADR 0162). Keyboard: `CURVE_SETTINGS`, five curves, `REBIRTH_TARGETS` (ADR 0225), and `PAD_SETTINGS`, the step-pad table (`docs/games/keyboard/balance.md`, ADR 0087/0088, ADR 0222).

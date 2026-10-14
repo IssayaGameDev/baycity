@@ -59,6 +59,18 @@ export interface SimInput {
   readonly overheadSeconds?: number
   /** Simulation step, seconds. Default 0.25. */
   readonly dt?: number
+  /** Stop before the horizon once this holds — asked after every run, where every milestone lands (ADR 0225). */
+  readonly until?: (done: Milestones) => boolean
+}
+
+/** When the milestones came, so far. */
+export interface Milestones {
+  /** When each stage was first cleared, by `<world>/<stage number>`. */
+  readonly clearedAt: ReadonlyMap<string, number>
+  /** When each rebirth came: index 0 the first. */
+  readonly rebirthAt: readonly number[]
+  /** When each world was entered, by name: the first at 0. */
+  readonly enteredAt: ReadonlyMap<string, number>
 }
 
 export interface SimSample {
@@ -83,11 +95,12 @@ export interface SimEvent {
   what: string
 }
 
-export interface SimResult {
+export interface SimResult extends Milestones {
   /** Seconds at which each Level was first reached in the current run; index = level. Reset by a rebirth. */
   levelAt: number[]
-  /** When each stage was first cleared, by `<world>/<stage number>`. */
   clearedAt: Map<string, number>
+  rebirthAt: number[]
+  enteredAt: Map<string, number>
   /** Everything notable, in order: a stage cleared, a switch of stage farmed, a pad, a rebirth, a world. */
   events: SimEvent[]
   /** One sample per `everyS` seconds, plus the final state. */
@@ -150,9 +163,12 @@ export const simulate = (input: SimInput, everyS = 60): SimResult => {
 
   const levelAtS: number[] = [0]
   const clearedAt = new Map<string, number>()
+  const rebirthAt: number[] = []
+  const enteredAt = new Map<string, number>([[worlds[0]!.name, 0]])
   const events: SimEvent[] = []
   const samples: SimSample[] = []
   let nextSample = 0
+  let done = false
 
   const world = (): SimWorld => worlds[worldIx]!
   const level = (): number => levelAt(experience, curve).level
@@ -202,6 +218,7 @@ export const simulate = (input: SimInput, everyS = 60): SimResult => {
     const L = level()
     if (L >= rebirthLevelAt(rebirths + 1, curve)) {
       rebirths++
+      rebirthAt.push(t)
       reborn = rebirthMultiplierAt(rebirths, curve)
       note(`rebirth ${rebirths} at Level ${L}: ×${short(reborn)} XP from now on, XP and Level reset`)
       experience = 0
@@ -213,6 +230,7 @@ export const simulate = (input: SimInput, everyS = 60): SimResult => {
       worldIx++
       cleared = 0
       farmed = -1
+      enteredAt.set(next.name, t)
       note(`entered ${next.name} at Level ${level()}`)
     }
   }
@@ -241,6 +259,7 @@ export const simulate = (input: SimInput, everyS = 60): SimResult => {
         }
         run = null
         between()
+        done = input.until?.({ clearedAt, rebirthAt, enteredAt }) === true
       }
     }
 
@@ -251,11 +270,12 @@ export const simulate = (input: SimInput, everyS = 60): SimResult => {
     }
     const now = level()
     while (levelAtS.length <= now) levelAtS.push(t)
+    if (done) break
   }
 
   const final = sample()
   samples.push(final)
-  return { levelAt: levelAtS, clearedAt, events, samples, final }
+  return { levelAt: levelAtS, clearedAt, rebirthAt, enteredAt, events, samples, final }
 }
 
 const clock = (s: number): string => {

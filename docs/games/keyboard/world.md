@@ -12,6 +12,7 @@ Singleton; one per level — the first in Hierarchy order is the one read (`worl
 | `baseXp` | number ≥ 0 | 1 | base XP per step: a step pays its pad's value times this (World 1 = 1) |
 | `speedMultiplier` | number ≥ 0 | 1 | Max Speed (the global curve) times this — World 2's ×⅓ |
 | `levelToEnter` | number ≥ 0 | 0 | the Level the world opens at. Nothing travels between worlds yet |
+| `targetToEnter` | number (min) | 0 | when the world should be entered, minutes into the game; 0 none — the Balance tab's (ADR 0225) |
 | `stages` | list | World 1's design table | a row a stage, below |
 | `pads` | list of `pad: componentRef StepPad` | none | the spawn's step pads in order: a pad's place is its tier |
 
@@ -25,6 +26,7 @@ A stage row (`STAGE_ROW`):
 | `gateSeconds` | number (s) | 45 | how long a run takes at its gate speed — the simulator's |
 | `floorSeconds` | number (s) | 5 | the part no speed shortens (a timer, a door) — the simulator's |
 | `fail` | number 0–95 | 0 | fail %: the chance a run fails (Kodjo's call) — the simulator's |
+| `target` | number (min) | 0 | when its first clear should come, minutes into the game; 0 none — the Balance tab's (ADR 0225) |
 
 A row's place is its stage number and its Checkpoint number; dragging a row moves all of it. The defaults are the 14
 stages of [world-1.md](world-1.md), each its gate speed's Level on the default speed curve, rounded up, with no

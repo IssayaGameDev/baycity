@@ -18,7 +18,9 @@ it. Constants that are not balance: `METRES_PER_STUD = 0.28`, `BASE_PER_STEP = 1
 
 The **pad table** is a game setting too (`PAD_SETTINGS.pads`, a table: XP per step and Wins needed a tier, ADR 0222). A
 world's own numbers — its base XP per step, speed multiplier, Level to enter, and its stages (Level, Wins, run time,
-floor, fail %) — are its level's `World` component ([world.md](world.md)); the simulator reads them (below).
+floor, fail %) — are its level's `World` component ([world.md](world.md)); the simulator reads them (below). So are the
+targets the Balance tab sets the run against (below): a stage's and the world's on the World, the rebirths' a game
+setting, `REBIRTH_TARGETS.rebirthTargets` (a table, row n rebirth n, minutes; `balanceReport.ts`), after the curves.
 
 ## The curve editor (`tools/editor/src/curveEditor.ts`)
 
@@ -32,10 +34,12 @@ The right edge of the graph shows the extension, so what Level 300 costs is visi
 ## The simulator — `balance.ts` (ADR 0223)
 
 ```ts
-simulate({ curve, pads, worlds, horizonS, hold?, failCost?, overheadSeconds?, dt? }, everyS = 60): SimResult
+simulate({ curve, pads, worlds, horizonS, hold?, failCost?, overheadSeconds?, dt?, until? }, everyS = 60): SimResult
 SimWorld { name; baseXp; speedMultiplier; levelToEnter; padTiers; stages: SimStage[] }
 SimStage { level; wins; runSeconds; floorSeconds; failChance }        // a World's stage row, fail % as a fraction
-SimResult { levelAt: number[] /* current run */; clearedAt: Map<'world/stage', s>; events: [{ t, what }]; samples; final }
+Milestones { clearedAt: Map<'world/stage', s>; rebirthAt: s[]; enteredAt: Map<world, s> /* the first at 0 */ }
+SimResult extends Milestones { levelAt: number[] /* current run */; events: [{ t, what }]; samples; final }
+until(m: Milestones) => boolean  // asked after every run: true stops before the horizon (ADR 0225)
 gateSpeed(stage, world, curve)   // maxSpeedAt(stage.level) × world.speedMultiplier
 runSeconds(stage, gate, speed)   // floor + (run − floor) × min(1, gate ÷ speed)
 clearSeconds(stage, gate, speed, failCost, overhead)   // run + overhead + p÷(1−p) × (failCost × run + overhead), p ≤ 95 %
@@ -43,7 +47,8 @@ padFor(wins, pads, tiers)        // the best of a world's first `tiers` pads the
 ```
 
 It reads only what the designer sets: the curves and the pad table (`game.json` `settings`), and each world's level's
-`World` ([world.md](world.md); `balanceWorlds.ts`: `simWorldOf`, `defaultSimWorld`). The player, every 0.25 s:
+`World` ([world.md](world.md); `balanceWorlds.ts`: `worldReadOf` — the `SimWorld` and its targets, `simWorldOf`,
+`defaultSimWorld`, `distinctWorlds` — one world a Level to enter, a copy left out and said). The player, every 0.25 s:
 
 - **earns** `cadence ÷ 60 × hold × pad × world base XP × rebirth` — wherever it is, while a direction is held;
 - **pushes** the next stage of its world when its speed passes that stage's gate — clearing it pays its Wins and
@@ -72,6 +77,21 @@ pnpm --filter @mode/keyboard run balance -- --hours 3 --every 900 --hold 0.85
 With no World in any level, a World's defaults (the design stages). Report: the curves, rebirths and pads in two lines,
 the worlds, the player's assumptions; Level milestones of the current run; each world's stages with their gate speed
 and first clear; every event (a stage cleared, a switch of stage farmed, a pad, a rebirth, a world); a timeline.
+
+## The Balance tab — `balanceReport.ts` (ADR 0225)
+
+`KEYBOARD_BALANCE` is the descriptor's `balance` (`platform/mode.md`); the games window draws it (`platform/editor.md`).
+`balanceReport({ settings, levels, options })`: every level's World (`worldReadOf`, by name, `distinctWorlds`), in the
+order they are entered; none → a World's defaults, said. `simulate` until every stage is cleared and every rebirth with
+a target has come, at most `HORIZON_S` (24 h; past it, said). Groups: a world each — `entered (Level N)` from the
+second, then `stage k` — then `Rebirths`, `rebirth n (Level L)`, as many as have targets or as came. Each moment's
+target and simulated time in seconds, `null` for none.
+
+| Option (`PLAYER_OPTIONS`) | Default | `simulate`'s |
+| --- | --- | --- |
+| `hold` — moving % | 100 | `hold` ÷ 100 |
+| `failCost` — a failed run costs % | 50 | `failCost` ÷ 100 |
+| `overhead` — back to a stage, s | 3 | `overheadSeconds` |
 
 ## What the defaults say (3 h, hold 100%)
 

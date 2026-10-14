@@ -5,6 +5,7 @@ import type { ComponentData, LoadedLevel, WorldNode } from '@mp/content'
 import type { Vec3 } from '@mp/core'
 
 import type { ActionBindings } from './actions'
+import type { BalanceDecl } from './balance'
 import type { SettingDecls } from './settings'
 import type { SurfaceGridOf } from './surface'
 
@@ -201,6 +202,11 @@ export interface ModeDescriptor {
    */
   readonly settings?: SettingDecls
   /**
+   * The games window's Balance tab (ADR 0225): the game's simulator over its settings and levels, against the targets
+   * the designer set. Absent means the game has no tab.
+   */
+  readonly balance?: BalanceDecl
+  /**
    * This game's own controls, as action name → the physical key `code`s that hold it (ADR 0061).
    *
    * The names are the game's and the platform never learns what one means: a host fills
@@ -252,6 +258,7 @@ export interface ModeDescriptor {
 
 export { spawnFrom, standingAt } from './spawn'
 export { readSettings, readSetting, isCurveSetting, isTableSetting, type SettingDecl, type SettingDecls, type SettingValues, type NumberSetting, type CurveSetting, type TableSetting, type TableColumn, type TableRows } from './settings'
+export type { BalanceDecl, BalanceGroup, BalanceLevel, BalanceMoment, BalanceReport } from './balance'
 export { sampleCurve, normalizePoints, lastRatio, RATIO_FLOOR, type CurvePoint, type CurveShape, type Interpolation, type Beyond } from './curve'
 
 /**

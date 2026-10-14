@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import type { BalanceLevel } from '@mp/mode'
 import { describe, expect, it } from 'vitest'
 
 import { createGamesWindow, type GamesWindowHost } from './gamesWindow'
@@ -34,6 +35,7 @@ const rig = (over: Partial<GamesWindowHost> = {}) => {
     onMoveLevel: (q, g) => calls.push(`move ${q} to ${g}`),
     settings: (g) => (g === 'keyboard' ? { decls: { keyPitch: { label: 'Key pitch', default: 1, min: 0.5, hint: 'metres between keys' } }, values } : null),
     onSettingChanged: (g, key, v, ongoing) => calls.push(`set ${g} ${key} ${String(v)}${ongoing ? ' ongoing' : ''}`),
+    balance: () => null,
     undo: () => calls.push('undo'),
     redo: () => calls.push('redo'),
     ...over,
@@ -148,5 +150,54 @@ describe('the games window', () => {
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
     expect(w.isOpen()).toBe(false)
     window.removeEventListener('keydown', behind)
+  })
+
+  it('has a Balance tab for a game with one: each moment against its target, re-run on every change (ADR 0225)', async () => {
+    const reports: Record<string, number>[] = []
+    let give: (levels: BalanceLevel[]) => void = () => {}
+    const { w, $$ } = rig({
+      balance: (g) =>
+        g !== 'keyboard'
+          ? null
+          : {
+              options: { hold: { label: 'moving %', default: 100, min: 0, max: 100 } },
+              levels: () => new Promise<BalanceLevel[]>((done) => void (give = done)),
+              report: (levels, options) => {
+                reports.push({ ...options })
+                const moments = [
+                  { label: 'stage 1', targetS: 60, simulatedS: 48 },
+                  { label: 'stage 2', targetS: 120, simulatedS: 125 },
+                  { label: 'stage 3', targetS: null, simulatedS: 200 },
+                  { label: 'stage 4', targetS: 600, simulatedS: null },
+                ]
+                return { groups: [{ title: 'World 1', moments }], notes: [`${levels.length} level`] }
+              },
+            },
+    })
+    expect($$('.gw-tab').map((t) => t.textContent)).toEqual(['Levels', 'Settings', 'Balance', 'Components'])
+    $$('.gw-tab').find((t) => t.textContent === 'Balance')!.click()
+    expect($$('.gw-results')[0]!.textContent).toBe('Reading the levels…')
+    give([{ name: 'Roblox', level: { id: 'Roblox', config: {}, nodes: [] } }])
+    await Promise.resolve()
+    expect(reports, 'the player starts at its defaults').toEqual([{ hold: 100 }])
+    const rows = $$('.gw-moment')
+    expect(rows.map((r) => r.className.replace('gw-moment ', ''))).toEqual(['early', 'on', 'none', 'missed'])
+    expect(rows.map((r) => [...r.children].map((c) => c.textContent))).toEqual([
+      ['stage 1', '1m00', '48s', '12s early'],
+      ['stage 2', '2m00', '2m05', 'on target (5s late)'],
+      ['stage 3', '—', '3m20', ''],
+      ['stage 4', '10m00', 'not reached', 'not reached'],
+    ])
+    expect($$('.gw-results .gw-note').map((n) => n.textContent)).toEqual(['1 level'])
+
+    const input = document.querySelector<HTMLInputElement>('.gw-balance .sf-v')!
+    input.value = '70'
+    input.dispatchEvent(new Event('blur'))
+    expect(reports.at(-1), 'a player option re-runs it').toEqual({ hold: 70 })
+    w.settingsChanged('keyboard')
+    expect(reports, 'and so does a setting changed anywhere').toHaveLength(3)
+
+    $$('.gw-game')[1]!.click()
+    expect($$('.gw-tab').map((t) => t.textContent), 'none for a game without one').toEqual(['Levels', 'Settings', 'Components'])
   })
 })

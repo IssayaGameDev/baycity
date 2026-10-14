@@ -3,6 +3,7 @@ import { DEFAULT_TUNING } from '@mp/humanoid'
 import type { ModeDescriptor } from '@mp/mode'
 import { MARKER_COLORS } from '@mp/render-three'
 
+import { KEYBOARD_BALANCE, REBIRTH_TARGETS } from './balanceReport'
 import { KEYBOARD_REGISTRY, keyboardSession, spawnOf } from './rules'
 import { KEY_SETTINGS, keyboardGridOf } from './keycaps'
 import { CURVE_SETTINGS } from './progression'
@@ -75,8 +76,10 @@ export const KEYBOARD_MODE: ModeDescriptor = {
    * (ADR 0120). The caps themselves are generated at load, which left an author placing platforms blind.
    */
   surfaceGrid: keyboardGridOf,
-  // The progression curves and the key geometry, in one Game row (ADR 0087, ADR 0115).
-  settings: { ...CURVE_SETTINGS, ...PAD_SETTINGS, ...KEY_SETTINGS },
+  // The progression curves, the rebirth targets beside them (ADR 0225), the pads and the key geometry (ADR 0087, 0115).
+  settings: { ...CURVE_SETTINGS, ...REBIRTH_TARGETS, ...PAD_SETTINGS, ...KEY_SETTINGS },
+  // The games window's Balance tab: the simulator against the targets (ADR 0225).
+  balance: KEYBOARD_BALANCE,
   spawn: spawnOf,
   session: keyboardSession,
 }

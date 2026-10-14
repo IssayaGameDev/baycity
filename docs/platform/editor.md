@@ -437,14 +437,15 @@ Only this tab sees the copy.
 `createGamesWindow(host)` → `{ open, close, isOpen, render, settingsChanged(game) }`, opened by the top bar's game
 button (`tb-game`, `game › level ▾`; inside a prefab `game ▾ › level › prefab`, the level the way back). A window
 over the editor (`.gw-scrim`, z 40, under menus and dialogs): games on the left — the one you are in dotted, the
-picked one lit — and the picked game's page with **Levels**, **Settings** and **Components**. Picking a game only
-browses.
+picked one lit — and the picked game's page with **Levels**, **Settings**, **Balance** (a game whose descriptor has
+`balance`, ADR 0225) and **Components**. Picking a game only browses.
 
 | Part | Now |
 | --- | --- |
 | Levels | `gameRows(games, levels)` (`assetTree.ts`, default first): a **New level** tile (`createLevel(null, game)`) and a tile per level, the open one lit, faces of who is in it (`room.peopleIn`, colours `peerCss`). Double-click opens (`openFile`, which is how the editor moves between games); right-click is `levelMenu` |
 | Moving | a tile dragged onto another game on the left: held over it, the game lights or greys with why (`moveRefusal` → `levelMoveRefusal` in `main.ts`: a level of that name there, someone in it, a component of another game's own it cannot have, from `FileEntry.components`); dropped, `fileOps.moveLevelToGame` asks (`askDestructive`, *Move*) and relocates it as a rename does (`relocateLevel`: leave if open, move, reopen); the server refuses while it uses its old game's own assets |
 | Settings | *Game settings* below: any game's, not only the one you are in |
+| Balance | `host.balance(game)` → `{ options, levels(), report(levels, options) }` (`main.ts`: `MODES[game].balance`, the settings `gameData[game].settings`; `balanceLevelsOf(game)` — the open level `rootLevel()`, the rest `loadLevelRaw`). *Player*: a `scrubFieldOf` per option, kept per game while the editor is open (`balanceOptions`), each from its default. Results (`.gw-results`): the report's notes, then a `table.gw-moments` a group — label, target, simulated, against it — a row `.gw-moment.<verdict>` (`balanceView.ts`: `verdictOf` — `none` / `on` within `ON_TARGET` 10 % / `early` / `late` / `missed`; `clockOf`, `differenceOf`), the last column coloured (`--on-target`, `--early`, `--late`). Levels read when the tab shows (a tab click, the window opening, another game picked: `balanceLevels`); re-run on an option's commit and once a frame while one is dragged, and on `settingsChanged(game)` |
 | Components | `registryFor(MODES[game]).all()` as its own (not engine, not shared), Shared (`isSharedComponent`), Built in (`ENGINE_COMPONENTS` + `PLAYER_COMPONENTS`). A Shared row has a remove button (`.gw-component-x`) → `onRemoveShared` → `removeShared` (*Removal* below); the others are code |
 | keys | the level behind gets none: a key pressed outside the window is stopped at `window` (capture), one pressed in it (or in a graph opened large, which goes inside `.gw-scrim`) reaches its field first and stops at `.gw-scrim` on the way out. Escape and a press outside close it; Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z are `host.undo` / `redo`, the one history — not while typing in a field. Left alone while a menu or a dialog (`[data-dialog]`, `confirm.ts`) is up |
 | live | `rooms` (who is in which document) and `levels` (the list changed) from the server (`collab.ts` → `liveSession` → `roomsChanged` → `render`, `levelsChanged` → `refreshFileList`) |

@@ -1,7 +1,8 @@
 import type { ParamDecls } from '@mp/components'
-import { isCurveSetting, isTableSetting, type CurvePoint, type SettingDecls, type TableRows } from '@mp/mode'
+import { isCurveSetting, isTableSetting, type BalanceLevel, type BalanceReport, type CurvePoint, type NumberSetting, type SettingDecls, type TableRows } from '@mp/mode'
 
 import { gameRows } from './assetTree'
+import { clockOf, differenceOf, verdictOf } from './balanceView'
 import { fieldRow, numberScrub, scrubFieldOf } from './controls'
 import { createCurveEditor, type CurveEditor } from './curveEditor'
 import { icon } from './icons'
@@ -54,6 +55,16 @@ export interface GamesWindowHost {
   settings: (game: string) => { decls: SettingDecls; values: Readonly<Record<string, SettingShown>> } | null
   /** A setting was changed; `ongoing` while a number is still being dragged, so the drag is one undo entry. */
   onSettingChanged: (game: string, key: string, value: SettingShown, ongoing: boolean) => void
+  /**
+   * A game's Balance tab (ADR 0225), `null` when it has none: what it lets you set about the imagined player, its
+   * levels as they are now — the open one live, the rest as the server has them — and its simulator over them with the
+   * game's settings now.
+   */
+  balance: (game: string) => {
+    options: Readonly<Record<string, NumberSetting>>
+    levels: () => Promise<readonly BalanceLevel[]>
+    report: (levels: readonly BalanceLevel[], options: Readonly<Record<string, number>>) => BalanceReport
+  } | null
   /** The editor's one history (ADR 0159). */
   undo: () => void
   redo: () => void
@@ -68,11 +79,11 @@ export interface GamesWindow {
   isOpen: () => boolean
   /** Draw again: a level made or gone, someone in or out of one. Nothing when closed. */
   render: () => void
-  /** A game's settings changed — anyone's edit, an undo: its fields show the values now, in place. */
+  /** A game's settings changed — anyone's edit, an undo: its fields show the values now, in place, and its Balance re-runs. */
   settingsChanged: (game: string) => void
 }
 
-type Tab = 'levels' | 'settings' | 'components'
+type Tab = 'levels' | 'settings' | 'balance' | 'components'
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] => {
   const node = document.createElement(tag)
@@ -90,6 +101,12 @@ export const createGamesWindow = (host: GamesWindowHost): GamesWindow => {
   /** The Settings tab's fields by key, to show a value from elsewhere in place, and its graphs, to let go of. */
   let settingFields = new Map<string, (v: SettingShown) => void>()
   let curves: CurveEditor[] = []
+  /** The imagined player per game, as the Balance tab sets it: kept while the editor is open, each from its default. */
+  const balanceOptions = new Map<string, Record<string, number>>()
+  /** The levels the Balance tab runs over, read each time it is shown: `levels` is `null` until they have come. */
+  let balanceLevels: { game: string; levels: readonly BalanceLevel[] | null } | null = null
+  /** Run the Balance tab's simulator again and redraw its results, while it is shown. */
+  let rerunBalance: (() => void) | null = null
 
   const scrim = el('div', 'gw-scrim')
   const box = el('div', 'gw')
@@ -270,6 +287,108 @@ export const createGamesWindow = (host: GamesWindowHost): GamesWindow => {
     return page
   }
 
+  /** The results: the notes, then a table a group — each moment, its target, the simulated time, how far off. */
+  const reportView = (report: BalanceReport): HTMLElement[] => {
+    const out: HTMLElement[] = report.notes.map((n) => el('div', 'gw-note', n))
+    for (const g of report.groups) {
+      out.push(el('div', 'gw-section', g.title))
+      const table = el('table', 'gw-moments')
+      const head = el('tr')
+      for (const h of ['', 'target', 'simulated', 'against it']) head.append(el('th', undefined, h))
+      table.append(head)
+      for (const m of g.moments) {
+        const row = el('tr', `gw-moment ${verdictOf(m.targetS, m.simulatedS)}`)
+        row.append(
+          el('td', 'gw-moment-l', m.label),
+          el('td', undefined, m.targetS === null ? '—' : clockOf(m.targetS)),
+          el('td', undefined, m.simulatedS === null ? 'not reached' : clockOf(m.simulatedS)),
+          el('td', 'gw-moment-v', differenceOf(m.targetS, m.simulatedS)),
+        )
+        table.append(row)
+      }
+      out.push(table)
+    }
+    return out
+  }
+
+  /**
+   * The game's balance (ADR 0225): the imagined player's numbers, then every moment the simulator reaches against the
+   * target set for it. Re-run on every change here, in Settings, or by anyone; the levels are read when the tab shows.
+   */
+  const balancePage = (game: string): HTMLElement => {
+    const page = el('div', 'gw-settings gw-balance')
+    const balance = host.balance(game)
+    if (balance === null) {
+      page.append(el('div', 'gw-note', 'This game has no balance view.'))
+      return page
+    }
+    const opts = balanceOptions.get(game) ?? Object.fromEntries(Object.entries(balance.options).map(([k, o]) => [k, o.default]))
+    balanceOptions.set(game, opts)
+    const results = el('div', 'gw-results')
+    const run = (): void => {
+      const levels = balanceLevels?.game === game ? balanceLevels.levels : null
+      if (levels === null) {
+        results.replaceChildren(el('div', 'gw-note', 'Reading the levels…'))
+        return
+      }
+      try {
+        results.replaceChildren(...reportView(balance.report(levels, opts)))
+      } catch (e) {
+        results.replaceChildren(el('div', 'gw-note', `The simulator stopped: ${e instanceof Error ? e.message : String(e)}`))
+      }
+    }
+    // A drag re-runs once a frame, however many steps it takes in one.
+    let queued = false
+    const soon = (): void => {
+      if (queued) return
+      queued = true
+      requestAnimationFrame(() => {
+        queued = false
+        if (rerunBalance === run) run()
+      })
+    }
+    page.append(el('div', 'gw-section', 'Player'), el('div', 'gw-note', 'Who the simulator plays: each starts at its default, and stays as set while the editor is open.'))
+    for (const [key, decl] of Object.entries(balance.options)) {
+      const field = scrubFieldOf({
+        value: opts[key] ?? decl.default,
+        spec: numberScrub(decl),
+        title: decl.label,
+        commit: (n) => {
+          opts[key] = n
+          run()
+        },
+        live: {
+          start: () => undefined,
+          move: (n) => {
+            opts[key] = n
+            soon()
+          },
+          end: () => run(),
+        },
+      })
+      page.append(fieldRow(decl.label, field.root))
+      if (decl.hint !== undefined) page.append(el('div', 'gw-note', decl.hint))
+    }
+    page.append(el('div', 'gw-note', 'Targets are set on a World’s rows (each stage, and entering it) and in Settings (each rebirth). On target: within 10 %.'), results)
+    rerunBalance = run
+    if (balanceLevels?.game !== game) {
+      const asked: { game: string; levels: readonly BalanceLevel[] | null } = { game, levels: null }
+      balanceLevels = asked
+      balance.levels().then(
+        (levels) => {
+          if (balanceLevels !== asked) return
+          asked.levels = levels
+          rerunBalance?.()
+        },
+        (e: unknown) => {
+          if (balanceLevels === asked) results.replaceChildren(el('div', 'gw-note', `Could not read the levels: ${e instanceof Error ? e.message : String(e)}`))
+        },
+      )
+    }
+    run()
+    return page
+  }
+
   const componentsPage = (game: string): HTMLElement => {
     const page = el('div', 'gw-components')
     const list = host.components(game)
@@ -311,6 +430,7 @@ export const createGamesWindow = (host: GamesWindowHost): GamesWindow => {
     for (const c of curves) c.dispose()
     curves = []
     settingFields = new Map()
+    rerunBalance = null
   }
 
   const render = (): void => {
@@ -374,17 +494,23 @@ export const createGamesWindow = (host: GamesWindowHost): GamesWindow => {
     const label = games.find((g) => g.name === picked)?.label ?? ''
     const tabs = el('div', 'gw-tabs')
     tabs.append(el('span', 'gw-page-title', label))
-    for (const [id, text] of [['levels', 'Levels'], ['settings', 'Settings'], ['components', 'Components']] as const) {
+    // Balance only for a game that has one (ADR 0225).
+    const hasBalance = picked !== null && host.balance(picked) !== null
+    if (tab === 'balance' && !hasBalance) tab = 'levels'
+    const shown: readonly (readonly [Tab, string])[] = [['levels', 'Levels'], ['settings', 'Settings'], ...(hasBalance ? [['balance', 'Balance'] as const] : []), ['components', 'Components']]
+    for (const [id, text] of shown) {
       const b = el('button', `gw-tab${tab === id ? ' on' : ''}`, text)
       b.type = 'button'
       b.addEventListener('click', () => {
         tab = id
+        // Shown again, read again: a level may have changed since.
+        if (id === 'balance') balanceLevels = null
         render()
       })
       tabs.append(b)
     }
     const body = el('div', 'gw-tab-body')
-    if (picked !== null) body.append(tab === 'levels' ? levelsPage(picked) : tab === 'settings' ? settingsPage(picked) : componentsPage(picked))
+    if (picked !== null) body.append(tab === 'levels' ? levelsPage(picked) : tab === 'settings' ? settingsPage(picked) : tab === 'balance' ? balancePage(picked) : componentsPage(picked))
     else body.append(el('div', 'gw-note', 'No game is installed in this build.'))
     page.append(tabs, body)
 
@@ -396,6 +522,7 @@ export const createGamesWindow = (host: GamesWindowHost): GamesWindow => {
   const open = (): void => {
     if (root !== null) return
     picked = host.game()
+    balanceLevels = null
     root = scrim
     document.body.append(scrim)
     window.addEventListener('keydown', onKey, true)
@@ -406,12 +533,15 @@ export const createGamesWindow = (host: GamesWindowHost): GamesWindow => {
     if (root === null) return
     root = null
     letGoOfSettings()
+    balanceLevels = null
     scrim.remove()
     window.removeEventListener('keydown', onKey, true)
   }
 
   const settingsChanged = (game: string): void => {
-    if (root === null || tab !== 'settings' || picked !== game) return
+    if (root === null || picked !== game) return
+    if (tab === 'balance') rerunBalance?.()
+    if (tab !== 'settings') return
     const values = host.settings(game)?.values
     if (values === undefined) return
     for (const [key, show] of settingFields) {

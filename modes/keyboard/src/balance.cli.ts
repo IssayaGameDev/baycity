@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { gameFile, levelRefForFile, LEVELS_DIR, type Level } from '@mp/content'
 
 import { formatReport, simulate, type SimWorld } from './balance'
-import { defaultSimWorld, simWorldOf } from './balanceWorlds'
+import { defaultSimWorld, distinctWorlds, worldReadOf } from './balanceWorlds'
 import { padTiersFrom } from './padTable'
 import { curveFrom } from './progression'
 
@@ -43,16 +43,14 @@ const names = existsSync(dir)
       .filter((l) => wanted.length === 0 || wanted.includes(l.name))
       .sort((a, b) => a.name.localeCompare(b.name))
   : []
-const found: SimWorld[] = names.flatMap((l) => {
-  const w = simWorldOf(l.name, JSON.parse(readFileSync(l.file, 'utf8')) as Level, pads.length)
+const found = names.flatMap((l) => {
+  const w = worldReadOf(l.name, JSON.parse(readFileSync(l.file, 'utf8')) as Level, pads.length)
   return w === null ? [] : [w]
 })
 // One world a Level to enter: two levels opening at the same Level are two copies of one world, and the first is read.
-const worlds: SimWorld[] = []
-for (const w of found) {
-  if (worlds.some((x) => x.levelToEnter === w.levelToEnter)) console.log(`(${w.name} opens at Level ${w.levelToEnter}, as an earlier one does: skipped — pick with --level)`)
-  else worlds.push(w)
-}
+const { kept, skipped } = distinctWorlds(found)
+for (const why of skipped) console.log(`(${why}: skipped — pick with --level)`)
+const worlds: SimWorld[] = kept.map((r) => r.world)
 if (worlds.length === 0) console.log('(no level has a World component: the World defaults, the design stages)')
 
 const input = {

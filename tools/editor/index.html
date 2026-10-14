@@ -30,6 +30,10 @@
         /* The Hierarchy's lines down each level of nesting (ADR 0150). */
         --guide: #353a43;
         --link: #6ab0ff;
+        /* The Balance tab (ADR 0225): a moment on its target, before it, after it. */
+        --on-target: #5cc98a;
+        --early: #6ab0ff;
+        --late: #f0b849;
       }
       * {
         box-sizing: border-box;
@@ -683,6 +687,39 @@
       .gw-none {
         color: var(--dim);
         font-style: italic;
+      }
+      /* The Balance tab's moments (ADR 0225): one table a world, the last column coloured by how it lands. */
+      .gw-moments {
+        width: 100%;
+        border-collapse: collapse;
+        font-variant-numeric: tabular-nums;
+      }
+      .gw-moments th {
+        color: var(--dim);
+        font-weight: normal;
+        font-size: 11px;
+        text-align: left;
+        padding: 2px 8px 2px 0;
+      }
+      .gw-moments td {
+        padding: 2px 8px 2px 0;
+        border-top: 1px solid var(--line);
+      }
+      .gw-moment.on .gw-moment-v {
+        color: var(--on-target);
+      }
+      .gw-moment.early .gw-moment-v {
+        color: var(--early);
+      }
+      .gw-moment.late .gw-moment-v,
+      .gw-moment.missed .gw-moment-v {
+        color: var(--late);
+      }
+      .gw-moment.none {
+        color: var(--dim);
+      }
+      .gw-results {
+        margin-top: 8px;
       }
       .gw-component {
         display: flex;

@@ -18,7 +18,7 @@ import {
   type AssetDatabase, type AssetKind, type AssetOp, type DataAsset, type MaterialAsset, type Transform } from '@mp/content'
 
 import { DEFAULT_REGISTRY, createRegistry, dataMenuPath, ENGINE_COMPONENTS, isSharedComponent, newDataAsset, PLAYER_COMPONENTS, SHARED_COMPONENT_TYPES, sharedComponents, type DataTypeDef, type Registry } from '@mp/components'
-import { type ModeDescriptor, readSettings } from '@mp/mode'
+import { type BalanceLevel, type ModeDescriptor, readSettings } from '@mp/mode'
 import { eulerToQuat, vec3, type Vec3 } from '@mp/core'
 import { createPhysicsWorld, initPhysics, type PhysicsWorld } from '@mp/physics'
 import {
@@ -1889,9 +1889,32 @@ const gamesWindow: GamesWindow = createGamesWindow({
     return { decls, values: readSettings(decls, gameData[game]?.settings) }
   },
   onSettingChanged: (game, key, value, ongoing) => changeGameSetting(game, key, value, ongoing),
+  balance: (game) => {
+    const balance = MODES[game]?.balance
+    if (balance === undefined) return null
+    return {
+      options: balance.options,
+      levels: () => balanceLevelsOf(game),
+      report: (levels, options) => balance.report({ settings: gameData[game]?.settings, levels, options }),
+    }
+  },
   undo: () => edits.undo(),
   redo: () => edits.redo(),
 })
+
+/**
+ * A game's levels as they are now, for its Balance tab (ADR 0225): the open one from its live document, the rest as the
+ * server has them — its live copy where someone has it open.
+ */
+const balanceLevelsOf = (game: string): Promise<BalanceLevel[]> =>
+  Promise.all(
+    levelEntries
+      .filter((e) => e.mode === game)
+      .map(async (e) => {
+        const open = e.name === fileState.name ? rootLevel() : null
+        return { name: shortName(e.name), level: open ?? ((await loadLevelRaw(e.name)) as Level) }
+      }),
+  )
 
 /**
  * Why a level cannot move to `game` (ADR 0162), or `null`, from what the editor knows before asking the server: a

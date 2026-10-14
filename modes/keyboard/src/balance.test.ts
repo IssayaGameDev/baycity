@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 import { clearSeconds, formatReport, gateSpeed, padFor, runSeconds, simulate, type SimStage, type SimWorld } from './balance'
-import { defaultSimWorld, simWorldOf } from './balanceWorlds'
+import { defaultSimWorld, distinctWorlds, simWorldOf, worldReadOf } from './balanceWorlds'
 import { DESIGN_STAGES, World } from './components/world'
 import { PAD_SETTINGS, padTiersFrom } from './padTable'
 import { DEFAULT_CURVE, maxSpeedAt } from './progression'
@@ -97,6 +97,22 @@ describe('simulate', () => {
     expect(r.final.speed).toBe(maxSpeedAt(r.final.level) * 0.5)
   })
 
+  it('says when each rebirth came and each world was entered, and stops once `until` holds (ADR 0225)', () => {
+    const curve = { ...DEFAULT_CURVE, rebirthLevel: [{ x: 1, y: 3 }, { x: 2, y: 1e9 }], rebirthMultiplier: [{ x: 1, y: 2 }, { x: 2, y: 2 }] }
+    const w1 = world([stage(0, 1, { runSeconds: 5, floorSeconds: 5 })], { name: 'W1' })
+    const w2 = world([stage(0, 1, { runSeconds: 5, floorSeconds: 5 })], { name: 'W2', levelToEnter: 2 })
+    const r = simulate({ curve, pads: PADS, worlds: [w1, w2], horizonS: 1800 })
+    const at = (what: string): number => r.events.find((e) => e.what.startsWith(what))!.t
+    expect(r.rebirthAt).toEqual([at('rebirth 1')])
+    expect([...r.enteredAt]).toEqual([
+      ['W1', 0],
+      ['W2', at('entered W2')],
+    ])
+    const stopped = simulate({ curve, pads: PADS, worlds: [w1, w2], horizonS: 1800, until: (m) => m.clearedAt.has('W2/1') })
+    expect(stopped.final.t).toBe(r.clearedAt.get('W2/1'))
+    expect(stopped.final.t).toBeLessThan(1800)
+  })
+
   it('reports without throwing on a World’s defaults', () => {
     const input = { curve: DEFAULT_CURVE, pads: PADS, worlds: [defaultSimWorld(PADS.length)], horizonS: 1800 }
     const text = formatReport(input, simulate(input))
@@ -128,5 +144,25 @@ describe('reading a level’s World', () => {
       stages: [{ level: 7, wins: 30, runSeconds: 20, floorSeconds: 4, failChance: 0.25 }],
     })
     expect(simWorldOf('none', { id: 'x', config: {}, nodes: [] }, 8)).toBeNull()
+  })
+})
+
+describe('a World’s targets (ADR 0225)', () => {
+  const levelWith = (params: Record<string, unknown>) => ({
+    id: 'lv',
+    config: {},
+    nodes: [{ id: 'w', transform: { position: { x: 0, y: 0, z: 0 } }, components: [{ id: 'c', type: World.type, params }] }],
+  })
+  it('are a stage row’s first clear and the world’s entry, minutes as seconds, 0 for none', () => {
+    const read = worldReadOf('lv', levelWith({ targetToEnter: 30, stages: [{ obstacle: null, level: 0, wins: 1, target: 1.5 }, { obstacle: null, level: 0, wins: 2 }] }), 8)
+    expect(read?.enterTargetS).toBe(1800)
+    expect(read?.stageTargetsS).toEqual([90, null])
+    expect(worldReadOf('lv', levelWith({}), 8)?.enterTargetS, 'a World as a new one is sets none').toBeNull()
+  })
+  it('come from one world a Level to enter: a copy opening at the same Level is left out, and said', () => {
+    const a = { world: { name: 'A', levelToEnter: 0 } }
+    const copy = { world: { name: 'A-copy', levelToEnter: 0 } }
+    const b = { world: { name: 'B', levelToEnter: 100 } }
+    expect(distinctWorlds([a, copy, b])).toEqual({ kept: [a, b], skipped: ['A-copy opens at Level 0, as A does'] })
   })
 })
