@@ -1102,6 +1102,8 @@ window.addEventListener('keydown', (e) => {
  */
 const play = createPlay({
   controls,
+  // Under the game nothing of the viewport shows, and drawing it halved a slower card's frame rate.
+  view: { pause: () => stage.stop(), resume: () => stage.start(editorFrame) },
   doc: () => doc,
   // Not a level, no game, or the server knows no page for it (ADR 0086).
   gamePageUrl: () =>
@@ -2678,7 +2680,8 @@ createSplitter({
 })
 
 // --- render loop ---
-stage.start((dt) => {
+/** One editor frame, before the stage draws it. Paused with the loop while Play is up (`createPlay`'s `view`). */
+const editorFrame = (dt: number): void => {
   /**
    * The preview clock: real time, and only while asked for (ADR 0142).
    *
@@ -2693,7 +2696,8 @@ stage.start((dt) => {
   controls.update()
   points.frame()
   edges.frame()
-})
+}
+stage.start(editorFrame)
 
 /**
  * (Re)read the asset database, bring the runtime up to date with what changed in it, then fetch everything the

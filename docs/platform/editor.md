@@ -755,7 +755,7 @@ brings the rest.
 
 **A level plays in the real game, and only there.** `start` → `host.gamePageUrl()` (`me.games[activeMode.name]`,
 from `/api/me`): live level → `host.flush()`; then an
-`<iframe id="game-frame">` over `#centre` at `${url}?level=${host.levelName()}` (bare, ADR 0108), orbit off, the
+`<iframe id="game-frame">` over `#centre` at `${url}?level=${host.levelName()}` (bare, ADR 0108), orbit off, the editor's frame loop paused (`view.pause` → `stage.stop`, resumed on Stop: drawn under the game, the viewport halved a slower card's frame rate, 60–80 against 144), the
 hint. Stop (toolbar, or Esc in the editor) removes the frame; Esc inside the frame is the game's pause. Hosted: `url`
 is the proxied `/play/<game>/`; dev: `http://localhost:<port>/` with `pnpm dev:<game>` running. No page — a prefab, a
 level whose game is not in the editor, a game the server has no page for — is refused with `host.noPageReason()`

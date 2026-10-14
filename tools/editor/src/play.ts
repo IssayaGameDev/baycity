@@ -19,6 +19,13 @@ import type { Doc } from './editorDoc'
 export interface PlayHost {
   /** The editor's orbit controls, switched off while the frame is up so a stray drag does not move the camera. */
   controls: OrbitControls
+  /**
+   * The editor's own frame loop, paused while the frame is up and resumed when it goes. Hidden under the game, the
+   * viewport still drew the whole level every frame — shadows, ambient occlusion, bloom, outlines — so two full scenes
+   * shared one graphics card: a collaborator's game ran at 60–80 a second in the editor against 144 on its own page.
+   * Edits arriving meanwhile are drawn on the first frame back.
+   */
+  view: { pause: () => void; resume: () => void }
   doc: () => Doc | null
   /** Where the open level's game plays, or `null`: not a level, no game, or the server knows no page for it. */
   gamePageUrl: () => string | null
@@ -80,6 +87,7 @@ export const createPlay = (host: PlayHost): Play => {
       document.getElementById('centre')?.append(frame)
       gameFrame = frame
       host.controls.enabled = false
+      host.view.pause()
       host.hint(`Playing ${host.fileName()} in the game · Stop to come back`)
       host.uiChanged()
     })()
@@ -90,6 +98,7 @@ export const createPlay = (host: PlayHost): Play => {
     gameFrame.remove()
     gameFrame = null
     host.controls.enabled = true
+    host.view.resume()
     host.hint(null)
     host.uiChanged()
   }
