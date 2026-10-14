@@ -18,8 +18,9 @@ import { BASE_PER_STEP, levelAt, maxSpeedAt, rebirthLevelAt, rebirthMultiplierAt
  *   stage by teleport: `overheadSeconds`.
  * - **It pushes forward** whenever the next stage is passable — clearing it reaches the one after; otherwise it
  *   **farms the reached stage paying the most Wins a minute** (Kodjo's call).
- * - **It rebirths** the moment the Level allows, between runs; **moves to the next world** (by its Level to enter)
- *   once that world has stages, starting it from its first stage.
+ * - **It rebirths** once the Level allows and the next stage is out of reach — what it can push it pushes first —
+ *   between runs; **moves to the next world** (by its Level to enter) once that world has stages, starting it from its
+ *   first stage.
  *
  * Only what the game has: no trails or auras. A sharp player — no idling, no wasted runs — so the times are a floor
  * on a real one's. For comparing one set of numbers against another.
@@ -67,6 +68,10 @@ export interface SimInput {
 export interface Milestones {
   /** When each stage was first cleared, by `<world>/<stage number>`. */
   readonly clearedAt: ReadonlyMap<string, number>
+  /** When the speed for each stage was first there — what a stage's target means (ADR 0226). */
+  readonly reachedAt: ReadonlyMap<string, number>
+  /** The Wins held right after each stage's first clear. */
+  readonly winsAtClear: ReadonlyMap<string, number>
   /** When each rebirth came: index 0 the first. */
   readonly rebirthAt: readonly number[]
   /** When each world was entered, by name: the first at 0. */
@@ -99,6 +104,8 @@ export interface SimResult extends Milestones {
   /** Seconds at which each Level was first reached in the current run; index = level. Reset by a rebirth. */
   levelAt: number[]
   clearedAt: Map<string, number>
+  reachedAt: Map<string, number>
+  winsAtClear: Map<string, number>
   rebirthAt: number[]
   enteredAt: Map<string, number>
   /** Everything notable, in order: a stage cleared, a switch of stage farmed, a pad, a rebirth, a world. */
@@ -163,12 +170,15 @@ export const simulate = (input: SimInput, everyS = 60): SimResult => {
 
   const levelAtS: number[] = [0]
   const clearedAt = new Map<string, number>()
+  const reachedAt = new Map<string, number>()
+  const winsAtClear = new Map<string, number>()
   const rebirthAt: number[] = []
   const enteredAt = new Map<string, number>([[worlds[0]!.name, 0]])
   const events: SimEvent[] = []
   const samples: SimSample[] = []
   let nextSample = 0
   let done = false
+  let lastLevel = -1
 
   const world = (): SimWorld => worlds[worldIx]!
   const level = (): number => levelAt(experience, curve).level
@@ -213,10 +223,16 @@ export const simulate = (input: SimInput, everyS = 60): SimResult => {
     return { at: best, left: seconds(best), pushing: false }
   }
 
-  /** Between runs: a rebirth the Level allows, then the next world its Level opens. */
+  /** The next stage of this world, passable now. */
+  const frontierOpen = (): boolean => {
+    const w = world()
+    return cleared < w.stages.length && speedNow() >= gateSpeed(w.stages[cleared]!, w, curve)
+  }
+
+  /** Between runs: a rebirth the Level allows once nothing new is passable, then the next world its Level opens. */
   const between = (): void => {
     const L = level()
-    if (L >= rebirthLevelAt(rebirths + 1, curve)) {
+    if (L >= rebirthLevelAt(rebirths + 1, curve) && !frontierOpen()) {
       rebirths++
       rebirthAt.push(t)
       reborn = rebirthMultiplierAt(rebirths, curve)
@@ -255,11 +271,12 @@ export const simulate = (input: SimInput, everyS = 60): SimResult => {
         if (run.pushing) {
           cleared++
           clearedAt.set(`${w.name}/${run.at + 1}`, t)
+          winsAtClear.set(`${w.name}/${run.at + 1}`, wins)
           note(`stage ${run.at + 1} of ${w.name} cleared (Level ${level()}, ${short(wins)} Wins)`)
         }
         run = null
         between()
-        done = input.until?.({ clearedAt, rebirthAt, enteredAt }) === true
+        done = input.until?.({ clearedAt, reachedAt, winsAtClear, rebirthAt, enteredAt }) === true
       }
     }
 
@@ -270,12 +287,21 @@ export const simulate = (input: SimInput, everyS = 60): SimResult => {
     }
     const now = level()
     while (levelAtS.length <= now) levelAtS.push(t)
+    if (now !== lastLevel) {
+      lastLevel = now
+      const w = world()
+      const speed = speedNow()
+      w.stages.forEach((s, i) => {
+        const key = `${w.name}/${i + 1}`
+        if (!reachedAt.has(key) && speed >= gateSpeed(s, w, curve)) reachedAt.set(key, t)
+      })
+    }
     if (done) break
   }
 
   const final = sample()
   samples.push(final)
-  return { levelAt: levelAtS, clearedAt, rebirthAt, enteredAt, events, samples, final }
+  return { levelAt: levelAtS, clearedAt, reachedAt, winsAtClear, rebirthAt, enteredAt, events, samples, final }
 }
 
 const clock = (s: number): string => {

@@ -64,7 +64,12 @@ export interface GamesWindowHost {
     options: Readonly<Record<string, NumberSetting>>
     levels: () => Promise<readonly BalanceLevel[]>
     report: (levels: readonly BalanceLevel[], options: Readonly<Record<string, number>>) => BalanceReport
+    /** The model's rules (ADR 0226), settings the Balance tab shows; none for a game without a model. */
+    rules: Readonly<Record<string, NumberSetting>>
+    ruleValues: () => Readonly<Record<string, number>>
   } | null
+  /** Apply: write every number the model's rules make, for this player — one history entry (ADR 0226). */
+  onApplyBalance: (game: string, options: Readonly<Record<string, number>>) => void
   /** The editor's one history (ADR 0159). */
   undo: () => void
   redo: () => void
@@ -312,8 +317,9 @@ export const createGamesWindow = (host: GamesWindowHost): GamesWindow => {
   }
 
   /**
-   * The game's balance (ADR 0225): the imagined player's numbers, then every moment the simulator reaches against the
-   * target set for it. Re-run on every change here, in Settings, or by anyone; the levels are read when the tab shows.
+   * The game's balance (ADR 0225, 0226): the model's rules and Apply, the imagined player's numbers, then every moment
+   * the simulator reaches against the target set for it. Re-run on every change here, in Settings, or by anyone; the
+   * levels are read when the tab shows.
    */
   const balancePage = (game: string): HTMLElement => {
     const page = el('div', 'gw-settings gw-balance')
@@ -347,6 +353,45 @@ export const createGamesWindow = (host: GamesWindowHost): GamesWindow => {
         if (rerunBalance === run) run()
       })
     }
+    // The model (ADR 0226): its rules are settings, edited as Settings' are, and Apply writes what they make.
+    const rules = Object.entries(balance.rules)
+    if (rules.length > 0) {
+      page.append(
+        el('div', 'gw-section', 'Model: World 1'),
+        el('div', 'gw-note', 'A few rules make every number. Apply writes the Max Speed, Level cost and rebirth curves and the step pads in Settings, and the stages of the open level’s World: one Ctrl+Z takes it all back.'),
+      )
+      const values = balance.ruleValues()
+      for (const [key, decl] of rules) {
+        let last: number | null = null
+        const field = scrubFieldOf({
+          value: values[key] ?? decl.default,
+          spec: numberScrub(decl),
+          title: decl.label,
+          commit: (n) => host.onSettingChanged(game, key, n, false),
+          live: {
+            start: () => undefined,
+            move: (n) => {
+              last = n
+              host.onSettingChanged(game, key, n, true)
+            },
+            end: () => {
+              if (last !== null) host.onSettingChanged(game, key, last, false)
+              last = null
+            },
+          },
+        })
+        settingFields.set(key, (next) => {
+          if (typeof next === 'number') field.set(next)
+        })
+        page.append(fieldRow(decl.label, field.root))
+        if (decl.hint !== undefined) page.append(el('div', 'gw-note', decl.hint))
+      }
+      const apply = el('button', 'gw-apply', 'Apply')
+      apply.type = 'button'
+      apply.title = 'Write every number these rules make, for the player below'
+      apply.addEventListener('click', () => host.onApplyBalance(game, opts))
+      page.append(apply)
+    }
     page.append(el('div', 'gw-section', 'Player'), el('div', 'gw-note', 'Who the simulator plays: each starts at its default, and stays as set while the editor is open.'))
     for (const [key, decl] of Object.entries(balance.options)) {
       const field = scrubFieldOf({
@@ -369,7 +414,11 @@ export const createGamesWindow = (host: GamesWindowHost): GamesWindow => {
       page.append(fieldRow(decl.label, field.root))
       if (decl.hint !== undefined) page.append(el('div', 'gw-note', decl.hint))
     }
-    page.append(el('div', 'gw-note', 'Targets are set on a World’s rows (each stage, and entering it) and in Settings (each rebirth). On target: within 10 %.'), results)
+    page.append(
+      el('div', 'gw-section', 'Results'),
+      el('div', 'gw-note', 'Each moment against its target: a stage when its speed is first there, a world when it is entered, a rebirth when it is taken. Targets are on a World’s rows and in Settings (rebirths). On target: within 10 %.'),
+      results,
+    )
     rerunBalance = run
     if (balanceLevels?.game !== game) {
       const asked: { game: string; levels: readonly BalanceLevel[] | null } = { game, levels: null }
@@ -540,7 +589,16 @@ export const createGamesWindow = (host: GamesWindowHost): GamesWindow => {
 
   const settingsChanged = (game: string): void => {
     if (root === null || picked !== game) return
-    if (tab === 'balance') rerunBalance?.()
+    if (tab === 'balance') {
+      // The model's rules are settings: shown in place, and the run again.
+      const values = host.balance(game)?.ruleValues() ?? {}
+      for (const [key, show] of settingFields) {
+        const v = values[key]
+        if (v !== undefined) show(v)
+      }
+      rerunBalance?.()
+      return
+    }
     if (tab !== 'settings') return
     const values = host.settings(game)?.values
     if (values === undefined) return

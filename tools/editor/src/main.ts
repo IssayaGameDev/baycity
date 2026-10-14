@@ -31,7 +31,7 @@ import {
   THREE,
   type AssetRuntime,
 } from '@mp/render-three'
-import { componentTypesInRaw, levelDoc, type Doc, type Mode } from './editorDoc'
+import { componentTypesInRaw, levelDoc, type Doc, type Mode, type OpBatch } from './editorDoc'
 import { createContextMenu, type ContextMenu } from './menu'
 import { askName } from './confirm'
 import {
@@ -290,15 +290,67 @@ const removeShared = async (game: string, type: string): Promise<void> => {
  * A game setting changed (ADR 0162): an edit to the game's live data file, shown at once and sent behind, and an
  * entry in the one undo history. `ongoing` while a number is dragged, so the drag is one entry.
  */
-const changeGameSetting = (game: string, key: string, value: SettingShown, ongoing: boolean): void => {
+const changeGameSetting = (game: string, key: string, value: SettingShown, ongoing: boolean, turn: Turn | null = null): void => {
   const mode = MODES[game]
   const have = gameData[game]
   if (mode === undefined || have === undefined) return
   const ops = diffAssetOps(have.settings[key], value, ['settings', key])
   const id = gameDocId(game)
   gameSync.edit(id, ops)
-  const label = `${mode.label} ${mode.settings?.[key]?.label ?? key}`
-  edits.recordAsset({ assetId: id, ops, inverses: applyAssetOps(have, ops).inverses.reverse(), label }, ongoing)
+  // A balance model's rule is a setting too (ADR 0226), shown in the Balance tab.
+  const label = `${mode.label} ${mode.settings?.[key]?.label ?? mode.balance?.rules?.[key]?.label ?? key}`
+  edits.recordAsset({ assetId: id, ops, inverses: applyAssetOps(have, ops).inverses.reverse(), label }, ongoing, turn)
+}
+
+/**
+ * The Balance tab's Apply (ADR 0226): every number the game's model makes of its rules — settings, and the params of a
+ * component of the open level — written as one turn, so one Ctrl+Z takes it all back. Refused, and said why, where it
+ * cannot: another game's level open, a prefab on top, the component missing, or the model's own refusal.
+ */
+const applyBalanceModel = (game: string, options: Readonly<Record<string, number>>): void => {
+  const mode = MODES[game]
+  const balance = mode?.balance
+  if (mode === undefined || balance?.apply === undefined) return
+  const open = doc
+  if (open === null || activeMode?.name !== game || prefabOpen !== null) {
+    notify.warn(`Open a level of ${mode.label} first: Apply writes its World’s stages.`)
+    return
+  }
+  const found = new Map<string, { index: number; id: string; params: Readonly<Record<string, unknown>> }>()
+  const paramsOf = (type: string): Readonly<Record<string, unknown>> | null => {
+    if (!found.has(type)) {
+      open.reading(() => {
+        for (let i = 0; i < open.count(); i++) {
+          const c = open.components(i).find((x) => x.type === type && x.enabled)
+          if (c !== undefined) return void found.set(type, { index: i, id: c.id, params: c.params })
+        }
+      })
+    }
+    return found.get(type)?.params ?? null
+  }
+  const result = balance.apply({ settings: gameData[game]?.settings, rules: readSettings(balance.rules ?? {}, gameData[game]?.settings), options, paramsOf })
+  if (result.refused !== null) {
+    notify.warn(`Apply: ${result.refused}`)
+    return
+  }
+  const label = 'apply the balance model'
+  const turn = edits.startTurn(label)
+  try {
+    for (const [key, value] of Object.entries(result.settings)) changeGameSetting(game, key, value, false, turn)
+    const target = result.component === null ? undefined : found.get(result.component.type)
+    if (result.component !== null && target !== undefined) {
+      const patch = result.component.patch
+      const batches: OpBatch[] = []
+      edits.holding(batches, () => open.setParams(target.index, target.id, { ...patch }))
+      edits.commitHeld(batches, label, turn)
+      const ops = batches.flatMap((b) => b.ops)
+      if (ops.length > 0) room.repaint(ops)
+    }
+  } finally {
+    edits.endTurn(turn)
+  }
+  gamesWindow.settingsChanged(game)
+  notify.ok(['Applied the balance model.', ...result.notes].join(' '))
 }
 
 /**
@@ -1892,12 +1944,16 @@ const gamesWindow: GamesWindow = createGamesWindow({
   balance: (game) => {
     const balance = MODES[game]?.balance
     if (balance === undefined) return null
+    const rules = balance.rules ?? {}
     return {
       options: balance.options,
       levels: () => balanceLevelsOf(game),
       report: (levels, options) => balance.report({ settings: gameData[game]?.settings, levels, options }),
+      rules,
+      ruleValues: () => readSettings(rules, gameData[game]?.settings),
     }
   },
+  onApplyBalance: (game, options) => applyBalanceModel(game, options),
   undo: () => edits.undo(),
   redo: () => edits.redo(),
 })

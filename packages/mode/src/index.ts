@@ -258,7 +258,7 @@ export interface ModeDescriptor {
 
 export { spawnFrom, standingAt } from './spawn'
 export { readSettings, readSetting, isCurveSetting, isTableSetting, type SettingDecl, type SettingDecls, type SettingValues, type NumberSetting, type CurveSetting, type TableSetting, type TableColumn, type TableRows } from './settings'
-export type { BalanceDecl, BalanceGroup, BalanceLevel, BalanceMoment, BalanceReport } from './balance'
+export type { BalanceApply, BalanceDecl, BalanceGroup, BalanceLevel, BalanceMoment, BalanceReport } from './balance'
 export { sampleCurve, normalizePoints, lastRatio, RATIO_FLOOR, type CurvePoint, type CurveShape, type Interpolation, type Beyond } from './curve'
 
 /**

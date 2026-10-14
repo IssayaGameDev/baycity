@@ -18,7 +18,7 @@ Package `packages/mode` (`@mp/mode`). Headless: no renderer import; gizmo colour
 | `player?` | `readonly ComponentData[]` | Components the player carries at runtime, validated against `registry` (ADR 0059). Absent = none. |
 | `playerDefs?` | `(host: PlayerHost) => readonly ComponentDef[]` | Session-bound definitions for the `player` list, closing over the live character (ADR 0061). Must agree with `player` by type — a mismatch logs `console.error` in `createComponentRuntime`. Absent = player components are data only (`Death`). |
 | `actions?` | `ActionBindings` | Game's own controls. Absent = move + jump only. |
-| `balance?` | `BalanceDecl` (`src/balance.ts`) | The games window's Balance tab (ADR 0225): `options` (number settings, the imagined player) and `report({ settings, levels: BalanceLevel[], options }) → { groups: { title, moments: { label, targetS, simulatedS }[] }[], notes }`, synchronous — it re-runs as you type. Absent = no tab. Keyboard: `KEYBOARD_BALANCE`. |
+| `balance?` | `BalanceDecl` (`src/balance.ts`) | The games window's Balance tab (ADR 0225): `options` (number settings, the imagined player) and `report({ settings, levels: BalanceLevel[], options }) → { groups: { title, moments: { label, targetS, simulatedS }[] }[], notes }`, synchronous — it re-runs as you type. `rules?` (number settings in `game.json`, shown in the tab) and `apply?({ settings, rules, options, paramsOf(type) }) → { refused, settings: key → value, component: { type, patch } \| null, notes }` — the model (ADR 0226). Absent = no tab. Keyboard: `KEYBOARD_BALANCE`. |
 | `session` | `(loaded: LoadedLevel, opts?: ModeSessionOptions) => ModeSession` | Begin the rules over one loaded level. |
 
 No level-settings block: a rule is a component (ADR 0053).

@@ -37,7 +37,7 @@ The right edge of the graph shows the extension, so what Level 300 costs is visi
 simulate({ curve, pads, worlds, horizonS, hold?, failCost?, overheadSeconds?, dt?, until? }, everyS = 60): SimResult
 SimWorld { name; baseXp; speedMultiplier; levelToEnter; padTiers; stages: SimStage[] }
 SimStage { level; wins; runSeconds; floorSeconds; failChance }        // a World's stage row, fail % as a fraction
-Milestones { clearedAt: Map<'world/stage', s>; rebirthAt: s[]; enteredAt: Map<world, s> /* the first at 0 */ }
+Milestones { clearedAt, reachedAt /* its speed first there */, winsAtClear: Map<'world/stage', s | Wins>; rebirthAt: s[]; enteredAt: Map<world, s> /* the first at 0 */ }
 SimResult extends Milestones { levelAt: number[] /* current run */; events: [{ t, what }]; samples; final }
 until(m: Milestones) => boolean  // asked after every run: true stops before the horizon (ADR 0225)
 gateSpeed(stage, world, curve)   // maxSpeedAt(stage.level) × world.speedMultiplier
@@ -54,7 +54,8 @@ It reads only what the designer sets: the curves and the pad table (`game.json` 
 - **pushes** the next stage of its world when its speed passes that stage's gate — clearing it pays its Wins and
   reaches the one after; otherwise **farms the reached, passable stage paying the most Wins a minute** (Kodjo's call);
 - every clear and every failed run costs `overheadSeconds` back from the spawn; a failed run `failCost` of a run;
-- takes pads by threshold, kept; **rebirths** between runs the moment `rebirthLevelAt` allows; enters the **next world**
+- takes pads by threshold, kept; **rebirths** between runs once `rebirthLevelAt` allows and the next stage is out of
+  reach — what it can push it pushes first (ADR 0226); enters the **next world**
   by `levelToEnter` once it has stages, starting it from stage 1.
 
 Only what the game has (no trails or auras). A sharp player — the times are a floor on a real one's. For comparing one
@@ -84,14 +85,15 @@ and first clear; every event (a stage cleared, a switch of stage farmed, a pad, 
 `balanceReport({ settings, levels, options })`: every level's World (`worldReadOf`, by name, `distinctWorlds`), in the
 order they are entered; none → a World's defaults, said. `simulate` until every stage is cleared and every rebirth with
 a target has come, at most `HORIZON_S` (24 h; past it, said). Groups: a world each — `entered (Level N)` from the
-second, then `stage k` — then `Rebirths`, `rebirth n (Level L)`, as many as have targets or as came. Each moment's
-target and simulated time in seconds, `null` for none.
+second, then `stage k` — its speed first there (`reachedAt`, ADR 0226) — then `Rebirths`, `rebirth n (Level L)`, as
+many as have targets or as came. Each moment's target and simulated time in seconds, `null` for none. Its model — the
+rules and Apply — is [balance-model.md](balance-model.md).
 
 | Option (`PLAYER_OPTIONS`) | Default | `simulate`'s |
 | --- | --- | --- |
-| `hold` — moving % | 100 | `hold` ÷ 100 |
-| `failCost` — a failed run costs % | 50 | `failCost` ÷ 100 |
-| `overhead` — back to a stage, s | 3 | `overheadSeconds` |
+| `hold` — Time moving, % | 100 | `hold` ÷ 100 |
+| `failCost` — Lost on a fall, % of a run | 50 | `failCost` ÷ 100 |
+| `overhead` — Walk back, seconds | 3 | `overheadSeconds` |
 
 ## What the defaults say (3 h, hold 100%)
 

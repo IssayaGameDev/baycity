@@ -1,14 +1,17 @@
 import { readSettings, type BalanceDecl, type BalanceGroup, type BalanceLevel, type BalanceReport, type NumberSetting, type TableRows, type TableSetting } from '@mp/mode'
 
 import { simulate, type Milestones } from './balance'
+import { generateModel, MODEL_RULES, type ModelRules } from './balanceModel'
 import { defaultWorldRead, distinctWorlds, targetSeconds, worldReadOf, type WorldRead } from './balanceWorlds'
+import { World } from './components/world'
 import { padTiersFrom } from './padTable'
 import { curveFrom, rebirthLevelAt } from './progression'
 
 /**
  * Keyboard's Balance tab (ADR 0225, step 3 of ADR 0222): the simulator (ADR 0223) over the game's settings and every
- * level's `World`, each moment beside its target — a stage's first clear and a world's entry from its World's rows, a
- * rebirth from the game's settings. The window colours them; this says what they are.
+ * level's `World`, each moment beside its target — a stage's speed first there and a world's entry from its World's
+ * rows, a rebirth from the game's settings. The window colours them; this says what they are. Its model (ADR 0226,
+ * `balanceModel.ts`) writes those numbers from a few rules.
  */
 
 /** The rebirth targets, a game setting beside the rebirth curves: row n is when rebirth n should come. */
@@ -24,10 +27,17 @@ export const REBIRTH_TARGETS = {
 
 /** The imagined player, as the Balance tab lets you change it: what `simulate` assumes, in the units a person thinks in. */
 export const PLAYER_OPTIONS = {
-  hold: { label: 'moving %', default: 100, min: 0, max: 100, step: 1, hint: 'how much of the time a direction is held: 100 never stops' },
-  failCost: { label: 'a failed run costs %', default: 50, min: 0, max: 100, step: 5, hint: 'of a run: on average a fall comes midway' },
-  overhead: { label: 'back to a stage, s', default: 3, min: 0, step: 0.5, hint: 'after a clear or a fall: the spawn, the teleport' },
+  hold: { label: 'Time moving, %', default: 100, min: 0, max: 100, step: 1, hint: 'how much of the time the player runs: 100 never stops' },
+  failCost: { label: 'Lost on a fall, % of a run', default: 50, min: 0, max: 100, step: 5, hint: 'on average a fall comes halfway through' },
+  overhead: { label: 'Walk back, seconds', default: 3, min: 0, step: 0.5, hint: 'from a Wins pad or a fall back to running: the spawn and the teleport' },
 } satisfies Record<string, NumberSetting>
+
+/** The options as `simulate` takes them. */
+const playerOf = (options: Readonly<Record<string, number>>) => ({
+  hold: (options.hold ?? PLAYER_OPTIONS.hold.default) / 100,
+  failCost: (options.failCost ?? PLAYER_OPTIONS.failCost.default) / 100,
+  overheadSeconds: options.overhead ?? PLAYER_OPTIONS.overhead.default,
+})
 
 /** How far it looks: a moment not reached in a day of play is not reached. */
 export const HORIZON_S = 24 * 3600
@@ -54,27 +64,15 @@ export const balanceReport = (input: { settings: unknown; levels: readonly Balan
   // Stop once every stage is cleared and every rebirth with a target has come.
   const reached = (m: Milestones): boolean =>
     m.rebirthAt.length >= rebirthTargets.length && worlds.every((w) => w.world.stages.every((_, i) => m.clearedAt.has(`${w.world.name}/${i + 1}`)))
-  const options = { ...Object.fromEntries(Object.entries(PLAYER_OPTIONS).map(([k, o]) => [k, o.default])), ...input.options }
-  const r = simulate(
-    {
-      curve,
-      pads,
-      worlds: worlds.map((w) => w.world),
-      horizonS: HORIZON_S,
-      hold: (options.hold ?? 100) / 100,
-      failCost: (options.failCost ?? 50) / 100,
-      overheadSeconds: options.overhead ?? 3,
-      until: reached,
-    },
-    HORIZON_S,
-  )
+  const r = simulate({ curve, pads, worlds: worlds.map((w) => w.world), horizonS: HORIZON_S, ...playerOf(input.options), until: reached }, HORIZON_S)
   if (!reached(r)) notes.push(`Simulated ${HORIZON_S / 3600} h of play: a moment with no time is not reached by then.`)
 
   const groups: BalanceGroup[] = worlds.map((w, k) => ({
     title: w.world.name,
     moments: [
       ...(k === 0 ? [] : [{ label: `entered (Level ${w.world.levelToEnter})`, targetS: w.enterTargetS, simulatedS: r.enteredAt.get(w.world.name) ?? null }]),
-      ...w.world.stages.map((_, i) => ({ label: `stage ${i + 1}`, targetS: w.stageTargetsS[i] ?? null, simulatedS: r.clearedAt.get(`${w.world.name}/${i + 1}`) ?? null })),
+      // A stage's moment is its speed first there, as its target is (ADR 0226): the clear comes a run later.
+      ...w.world.stages.map((_, i) => ({ label: `stage ${i + 1}`, targetS: w.stageTargetsS[i] ?? null, simulatedS: r.reachedAt.get(`${w.world.name}/${i + 1}`) ?? null })),
     ],
   }))
   const rebirths = Math.max(rebirthTargets.length, r.rebirthAt.length)
@@ -91,4 +89,11 @@ export const balanceReport = (input: { settings: unknown; levels: readonly Balan
   return { groups, notes }
 }
 
-export const KEYBOARD_BALANCE: BalanceDecl = { options: PLAYER_OPTIONS, report: balanceReport }
+/** Apply (ADR 0226): the model over the open level's World, as settings and that World's stage rows. */
+const applyModel: NonNullable<BalanceDecl['apply']> = ({ settings, rules, options, paramsOf }) => {
+  const out = generateModel({ ...(Object.fromEntries(Object.entries(MODEL_RULES).map(([k, d]) => [k, d.default])) as ModelRules), ...rules }, playerOf(options), settings, paramsOf(World.type))
+  if ('refused' in out) return { refused: out.refused, settings: {}, component: null, notes: [] }
+  return { refused: null, settings: out.settings, component: { type: World.type, patch: { stages: out.stages } }, notes: out.notes }
+}
+
+export const KEYBOARD_BALANCE: BalanceDecl = { options: PLAYER_OPTIONS, report: balanceReport, rules: MODEL_RULES, apply: applyModel }

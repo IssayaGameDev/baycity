@@ -40,7 +40,7 @@ Orient: this file → `platform/README.md` → the game's `README.md` → only w
 
 | Game | Docs |
 | --- | --- |
-| [keyboard](games/keyboard/README.md) | progression, balance, world-1, steps, keycaps, stages-and-wins, obstacles, pads, hud, debug, known-open |
+| [keyboard](games/keyboard/README.md) | progression, balance, balance-model, world-1, steps, keycaps, stages-and-wins, obstacles, pads, hud, debug, known-open |
 
 `modes/_template` is documented in `platform/workspace.md` (how to add a game).
 
@@ -276,5 +276,6 @@ why matters.
 | [0223](adr/0223-the-simulator-plays-the-world.md) | The simulator plays the World |
 | [0224](adr/0224-a-bulk-edit-is-one-redraw-for-the-room.md) | A bulk edit is one redraw for the room |
 | [0225](adr/0225-the-balance-tab.md) | The Balance tab: the simulated run against the targets |
+| [0226](adr/0226-a-balance-model-rules-in-numbers-out.md) | A balance model: rules in, numbers out |
 
 `Design archive/` holds superseded design material and is not maintained.

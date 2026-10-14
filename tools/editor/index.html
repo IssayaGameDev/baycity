@@ -721,6 +721,20 @@
       .gw-results {
         margin-top: 8px;
       }
+      /* The model's Apply (ADR 0226): the one button that writes, so the dialogs' main one. */
+      .gw-apply {
+        margin: 6px 0 4px var(--lw);
+        padding: 5px 14px;
+        border: 1px solid var(--accent);
+        border-radius: 4px;
+        background: var(--accent-dim);
+        color: var(--text);
+        font: inherit;
+        cursor: pointer;
+      }
+      .gw-apply:hover {
+        background: var(--accent);
+      }
       .gw-component {
         display: flex;
         align-items: baseline;

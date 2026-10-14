@@ -36,6 +36,7 @@ const rig = (over: Partial<GamesWindowHost> = {}) => {
     settings: (g) => (g === 'keyboard' ? { decls: { keyPitch: { label: 'Key pitch', default: 1, min: 0.5, hint: 'metres between keys' } }, values } : null),
     onSettingChanged: (g, key, v, ongoing) => calls.push(`set ${g} ${key} ${String(v)}${ongoing ? ' ongoing' : ''}`),
     balance: () => null,
+    onApplyBalance: (g, options) => calls.push(`apply ${g} ${JSON.stringify(options)}`),
     undo: () => calls.push('undo'),
     redo: () => calls.push('redo'),
     ...over,
@@ -152,15 +153,18 @@ describe('the games window', () => {
     window.removeEventListener('keydown', behind)
   })
 
-  it('has a Balance tab for a game with one: each moment against its target, re-run on every change (ADR 0225)', async () => {
+  it('has a Balance tab for a game with one: the model, each moment against its target, re-run on every change (ADR 0225, 0226)', async () => {
     const reports: Record<string, number>[] = []
     let give: (levels: BalanceLevel[]) => void = () => {}
-    const { w, $$ } = rig({
+    let minutes = 45
+    const { w, $$, calls } = rig({
       balance: (g) =>
         g !== 'keyboard'
           ? null
           : {
               options: { hold: { label: 'moving %', default: 100, min: 0, max: 100 } },
+              rules: { modelMinutes: { label: 'World length, min', default: 45, min: 1 } },
+              ruleValues: () => ({ modelMinutes: minutes }),
               levels: () => new Promise<BalanceLevel[]>((done) => void (give = done)),
               report: (levels, options) => {
                 reports.push({ ...options })
@@ -189,13 +193,21 @@ describe('the games window', () => {
       ['stage 4', '10m00', 'not reached', 'not reached'],
     ])
     expect($$('.gw-results .gw-note').map((n) => n.textContent)).toEqual(['1 level'])
+    expect($$('.gw-balance > .gw-section').map((n) => n.textContent)).toEqual(['Model: World 1', 'Player', 'Results'])
 
-    const input = document.querySelector<HTMLInputElement>('.gw-balance .sf-v')!
-    input.value = '70'
-    input.dispatchEvent(new Event('blur'))
+    const [rule, hold] = [...document.querySelectorAll<HTMLInputElement>('.gw-balance .sf-v')]
+    hold!.value = '70'
+    hold!.dispatchEvent(new Event('blur'))
     expect(reports.at(-1), 'a player option re-runs it').toEqual({ hold: 70 })
+    rule!.value = '30'
+    rule!.dispatchEvent(new Event('blur'))
+    expect(calls, 'a rule is a setting, written as one').toEqual(['set keyboard modelMinutes 30'])
+    minutes = 30
     w.settingsChanged('keyboard')
-    expect(reports, 'and so does a setting changed anywhere').toHaveLength(3)
+    expect(rule!.value, 'shown in place').toBe('30')
+    expect(reports, 'and the run again').toHaveLength(3)
+    document.querySelector<HTMLButtonElement>('.gw-apply')!.click()
+    expect(calls.at(-1), 'Apply, for the player set').toBe('apply keyboard {"hold":70}')
 
     $$('.gw-game')[1]!.click()
     expect($$('.gw-tab').map((t) => t.textContent), 'none for a game without one').toEqual(['Levels', 'Settings', 'Components'])

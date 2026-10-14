@@ -113,6 +113,18 @@ describe('simulate', () => {
     expect(stopped.final.t).toBeLessThan(1800)
   })
 
+  it('pushes what it can before a rebirth, and says when each stage’s speed was first there and the Wins held at its first clear (ADR 0226)', () => {
+    // A rebirth at stage 2's own Level: it clears stage 2 first, then rebirths.
+    const curve = { ...DEFAULT_CURVE, rebirthLevel: [{ x: 1, y: 3 }, { x: 2, y: 1e9 }], rebirthMultiplier: [{ x: 1, y: 2 }, { x: 2, y: 2 }] }
+    const w = world([stage(0, 1, { runSeconds: 5, floorSeconds: 5 }), stage(3, 4, { runSeconds: 5, floorSeconds: 5 })], { name: 'W' })
+    const r = simulate({ curve, pads: [], worlds: [w], horizonS: 1800 })
+    const rebirth = r.rebirthAt[0]!
+    expect(r.clearedAt.get('W/2')!, 'stage 2 cleared before the rebirth its Level allows').toBeLessThanOrEqual(rebirth)
+    expect(r.reachedAt.get('W/1')).toBe(0.25)
+    expect(r.reachedAt.get('W/2')!).toBeLessThan(r.clearedAt.get('W/2')!)
+    expect(r.winsAtClear.get('W/1')).toBe(1)
+  })
+
   it('reports without throwing on a World’s defaults', () => {
     const input = { curve: DEFAULT_CURVE, pads: PADS, worlds: [defaultSimWorld(PADS.length)], horizonS: 1800 }
     const text = formatReport(input, simulate(input))
