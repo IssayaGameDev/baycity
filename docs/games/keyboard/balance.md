@@ -18,7 +18,7 @@ it. Constants that are not balance: `METRES_PER_STUD = 0.28`, `BASE_PER_STEP = 1
 
 The **pad table** is a game setting too (`PAD_SETTINGS.pads`, a table: XP per step and Wins needed a tier, ADR 0222). A
 world's own numbers — its base XP per step, speed multiplier, Level to enter, and its stages (Level, Wins, run time,
-floor, falls) — are its level's `World` component ([world.md](world.md)). The simulator does not read them yet.
+floor, fail %) — are its level's `World` component ([world.md](world.md)); the simulator reads them (below).
 
 ## The curve editor (`tools/editor/src/curveEditor.ts`)
 
@@ -29,27 +29,31 @@ change is one step of the editor's undo (Ctrl+Z). Wheel zooms around the cursor 
 `levelCost`: an exponential is a straight line, and the readout gives the ratio per Level of the last segment.
 The right edge of the graph shows the extension, so what Level 300 costs is visible.
 
-## The simulator — `balance.ts`
+## The simulator — `balance.ts` (ADR 0223)
 
 ```ts
-simulate({ curve, scenario, horizonS, hold?, dt? }, everyS = 60): SimResult
-Scenario { worlds: [{ name, levelRequired, xpMultiplier, speedMultiplier, stages: [{ stage, speed, wins }] }],
-           pads: [{ perStep, requiresWins }],
-           trails: [{ name, wins, multiplier }], auras: [...], clearSeconds, fastClearSeconds }
-SimResult { levelAt: number[] /* current run */; stageOpenAt: Map<'World/stage', s>; events: [{ t, what }]; samples; final }
+simulate({ curve, pads, worlds, horizonS, hold?, failCost?, overheadSeconds?, dt? }, everyS = 60): SimResult
+SimWorld { name; baseXp; speedMultiplier; levelToEnter; padTiers; stages: SimStage[] }
+SimStage { level; wins; runSeconds; floorSeconds; failChance }        // a World's stage row, fail % as a fraction
+SimResult { levelAt: number[] /* current run */; clearedAt: Map<'world/stage', s>; events: [{ t, what }]; samples; final }
+gateSpeed(stage, world, curve)   // maxSpeedAt(stage.level) × world.speedMultiplier
+runSeconds(stage, gate, speed)   // floor + (run − floor) × min(1, gate ÷ speed)
+clearSeconds(stage, gate, speed, failCost, overhead)   // run + overhead + p÷(1−p) × (failCost × run + overhead), p ≤ 95 %
+padFor(wins, pads, tiers)        // the best of a world's first `tiers` pads the Wins reach, else 1
 ```
 
-The model, from [world-1.md](world-1.md): a **stage is a speed gate** — passable at `speed`, pays `wins` per
-clear, `clearTime` = `clearSeconds` at the gate falling to `fastClearSeconds` at twice it. The player holds a
-direction `hold` of the time, runs the furthest passable stage of the current world, takes pads by threshold
-(and keeps them when Wins are spent), buys the best affordable trail and aura, rebirths the moment the Level
-allows — the game's own curves, `rebirthLevelAt` and `rebirthMultiplierAt` (XP and Level reset, ADR 0221) — and moves to the highest open world that has stages. Uses the
-game's own `levelAt`, `maxSpeedAt`, `stepsPerMinute`. A **ceiling**: no idling, no deaths. For comparing curves,
-not predicting a clock.
+It reads only what the designer sets: the curves and the pad table (`game.json` `settings`), and each world's level's
+`World` ([world.md](world.md); `balanceWorlds.ts`: `simWorldOf`, `defaultSimWorld`). The player, every 0.25 s:
 
-Scenario data: `modes/keyboard/balance.world1.json` — World 1's 14 gates and payouts, the eight pads,
-15 trails and 5 auras interpolated between the ends Kodjo gave, Worlds 2 and 3 as openings with no
-stages yet. `balance.test.ts` asserts it matches the table in [world-1.md](world-1.md).
+- **earns** `cadence ÷ 60 × hold × pad × world base XP × rebirth` — wherever it is, while a direction is held;
+- **pushes** the next stage of its world when its speed passes that stage's gate — clearing it pays its Wins and
+  reaches the one after; otherwise **farms the reached, passable stage paying the most Wins a minute** (Kodjo's call);
+- every clear and every failed run costs `overheadSeconds` back from the spawn; a failed run `failCost` of a run;
+- takes pads by threshold, kept; **rebirths** between runs the moment `rebirthLevelAt` allows; enters the **next world**
+  by `levelToEnter` once it has stages, starting it from stage 1.
+
+Only what the game has (no trails or auras). A sharp player — the times are a floor on a real one's. For comparing one
+set of numbers against another. `balance.test.ts` holds a new World's stages to [world-1.md](world-1.md)'s table.
 
 ```sh
 pnpm --filter @mode/keyboard run balance -- --hours 3 --every 900 --hold 0.85
@@ -60,14 +64,16 @@ pnpm --filter @mode/keyboard run balance -- --hours 3 --every 900 --hold 0.85
 | `--hours` | 2 | horizon |
 | `--every` | 300 | seconds between timeline rows |
 | `--hold` | 1 | fraction of time moving |
-| `--scenario` | `balance.world1.json` | |
-| `--content` | `content/` | `.content-live` for the mirror's curves |
+| `--fail-cost` | 0.5 | what a failed run costs, as a fraction of a run |
+| `--overhead` | 3 | seconds back to a stage after a clear or a fall |
+| `--level` | every level with a World | a level to read; repeat for several. Two opening at the same Level: the first, the other named |
+| `--content` | `content/` | `.content-live` for the mirror's |
 
-Report: the curves in one line, Level milestones of the current run, every event (stage opened, pad taken,
-purchase, rebirth, world), a timeline.
+With no World in any level, a World's defaults (the design stages). Report: the curves, rebirths and pads in two lines,
+the worlds, the player's assumptions; Level milestones of the current run; each world's stages with their gate speed
+and first clear; every event (a stage cleared, a switch of stage farmed, a pad, a rebirth, a world); a timeline.
 
 ## What the defaults say (3 h, hold 100%)
 
-Rebirth 1 at 2m45 (Level 10), rebirth 2 at 6m59 (Level 50); stage 14 passable at 7m19; the +500 pad at 7m58;
-trail 7 (×780) at 19 min; World 2 open at 26 min. A ceiling, on defaults fitted from thin data — the thing the
-editor exists to change.
+On the World's defaults: stage 1 cleared at 48 s, rebirth 1 at 4 min (Level 11), stage 13 at 12 min, rebirth 2 at
+13 min, all 14 stages at 15m27, then Level ~90 at 3 h with nowhere further to go. A floor on a real player's times.

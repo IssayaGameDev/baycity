@@ -463,7 +463,7 @@ describe('the World (ADR 0222)', () => {
     ],
   }
   const placed = (id: string, x: number): Node => ({ id, transform: { position: vec3(x, 0, 0) }, components: [], prefab: 'room' }) as Node
-  const row = (obstacle: string | null, level: number, wins: number) => ({ obstacle: obstacle === null ? null : { node: obstacle, component: 'ob' }, level, wins, gateSeconds: 45, floorSeconds: 5, falls: 0 })
+  const row = (obstacle: string | null, level: number, wins: number) => ({ obstacle: obstacle === null ? null : { node: obstacle, component: 'ob' }, level, wins, gateSeconds: 45, floorSeconds: 5, fail: 0 })
   const world = (stages: unknown[], pads: unknown[] = []): Node => ({ id: 'world', transform: { position: vec3(0, 0, 0) }, components: [comp('w', World.type, { stages, pads })] })
   const stepPad = (id: string, x: number): Node => pad(id, x, comp(`${id}-s`, StepPad.type, { perStep: 99, requiresWins: 99 }))
   const loadWith = (nodes: Node[]): LoadedLevel =>

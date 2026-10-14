@@ -24,7 +24,7 @@ A stage row (`STAGE_ROW`):
 | `wins` | number | 1 | what it pays: the Obstacle's `wins`, and so its Wins pad's |
 | `gateSeconds` | number (s) | 45 | how long a run takes at its gate speed — the simulator's |
 | `floorSeconds` | number (s) | 5 | the part no speed shortens (a timer, a door) — the simulator's |
-| `falls` | number | 0 | the falls a clear costs — the simulator's |
+| `fail` | number 0–95 | 0 | fail %: the chance a run fails (Kodjo's call) — the simulator's |
 
 A row's place is its stage number and its Checkpoint number; dragging a row moves all of it. The defaults are the 14
 stages of [world-1.md](world-1.md), each its gate speed's Level on the default speed curve, rounded up, with no

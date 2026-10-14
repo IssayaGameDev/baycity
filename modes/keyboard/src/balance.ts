@@ -1,91 +1,80 @@
+import type { PadTier } from './padTable'
 import { BASE_PER_STEP, levelAt, maxSpeedAt, rebirthLevelAt, rebirthMultiplierAt, stepsPerMinute, type ProgressCurve } from './progression'
 
 /**
- * The balance simulator (ADR 0087, rebuilt on gates ADR 0088): one imagined player run through the whole loop.
+ * The balance simulator (ADR 0087, 0088; rebuilt on the World, ADR 0223): one imagined player through the whole game,
+ * from the numbers the designer sets and nothing else — the curves and the pad table (the game's settings) and each
+ * world's `World` (its level). It adds time: when each stage is first cleared, when each pad and rebirth comes.
  *
- * Pure and deterministic, and it uses the game's own conversions — `levelAt`, `maxSpeedAt`, `stepsPerMinute`,
- * the `StepPad` rule — never a second model of them. What it adds is **time**: when Level 30 comes, when stage 10
- * opens, when the ×25 pad is affordable, when the first rebirth happens.
+ * The player, as Kodjo's game plays:
  *
- * The model, as Kodjo described the game (`docs/games/keyboard/world-1.md`):
+ * - **Steps** accrue the whole time a direction is held (`hold`), at the cadence curve, each paying the best pad its
+ *   Wins have reached (pads stick, ADR 0082) × the world's base XP × the rebirth multiplier.
+ * - **A stage is a speed gate**: its row's Level, as Max Speed × the world's speed multiplier. Below it, it cannot be
+ *   passed. A run takes `floor + (run − floor) × gate ÷ speed` — exactly the row's run time at the gate, never under
+ *   its floor (a timer, a door) however fast.
+ * - **A run fails** with the row's chance; a failed one costs `failCost` of a run (half, on average a fall comes
+ *   midway) and the trip back. Every clear pays the row's Wins and sends the player to the spawn, and back to a
+ *   stage by teleport: `overheadSeconds`.
+ * - **It pushes forward** whenever the next stage is passable — clearing it reaches the one after; otherwise it
+ *   **farms the reached stage paying the most Wins a minute** (Kodjo's call).
+ * - **It rebirths** the moment the Level allows, between runs; **moves to the next world** (by its Level to enter)
+ *   once that world has stages, starting it from its first stage.
  *
- * - A **stage is a speed gate**: it needs `speed`, pays `wins` once per clear, and returns you to spawn. The
- *   player always runs the furthest stage of the current world their speed passes, and clears it in
- *   `clearSeconds` at the gate speed, shrinking towards `fastClearSeconds` as speed grows past it. Length is
- *   not a balance value.
- * - Steps accrue the whole time a direction is held (`hold`), at the cadence curve, each paying
- *   `1 × pad × world × rebirth × trail × aura`.
- * - **Wins** are spent greedily: the best affordable trail and aura are bought as soon as they can be. Pads
- *   are thresholds, free to take, and **a pad once taken stays** (ADR 0082) even after Wins are spent below it.
- * - **Rebirth** the moment its Level is reached: XP and Level reset, and the multiplier is the curves' for that
- *   rebirth (`rebirthLevel`, `rebirthMultiplier`, ADR 0221) — the game's own, from the same settings.
- * - **Worlds** open at a Level; the player moves to the highest open one and stays there.
- *
- * It is a ceiling: a player who knows every route, never idles, never dies below the gate. Its use is comparing
- * one set of curves against another, not predicting a clock.
+ * Only what the game has: no trails or auras. A sharp player — no idling, no wasted runs — so the times are a floor
+ * on a real one's. For comparing one set of numbers against another.
  */
-export interface GateStage {
-  stage: number
-  /** studs/s the obstacle needs. */
-  speed: number
-  /** Wins one clear pays. */
-  wins: number
+
+/** One stage, as its World row says (`fail` as a fraction). */
+export interface SimStage {
+  readonly level: number
+  readonly wins: number
+  readonly runSeconds: number
+  readonly floorSeconds: number
+  readonly failChance: number
 }
 
-export interface WorldPlan {
-  name: string
-  /** Level at which the world opens; World 1 is 0. */
-  levelRequired: number
-  /** Per-step XP × and Max Speed × in this world. */
-  xpMultiplier: number
-  speedMultiplier: number
-  stages: readonly GateStage[]
-}
-
-export interface PadPlan {
-  perStep: number
-  requiresWins: number
-}
-
-/** A trail or an aura: bought once with Wins, the best owned is the one equipped. */
-export interface ShopItem {
-  name: string
-  wins: number
-  multiplier: number
-}
-
-export interface Scenario {
-  worlds: readonly WorldPlan[]
-  pads: readonly PadPlan[]
-  trails: readonly ShopItem[]
-  auras: readonly ShopItem[]
-  /** Seconds a stage takes at exactly its gate speed, and at speeds far above it. */
-  clearSeconds: number
-  fastClearSeconds: number
+/** One world, as its level's `World` says. */
+export interface SimWorld {
+  readonly name: string
+  readonly baseXp: number
+  readonly speedMultiplier: number
+  readonly levelToEnter: number
+  /** How many of the pad table's tiers its spawn holds. */
+  readonly padTiers: number
+  readonly stages: readonly SimStage[]
 }
 
 export interface SimInput {
-  curve: ProgressCurve
-  scenario: Scenario
+  readonly curve: ProgressCurve
+  readonly pads: readonly PadTier[]
+  readonly worlds: readonly SimWorld[]
   /** Seconds to simulate. */
-  horizonS: number
+  readonly horizonS: number
   /** Fraction of the time a direction is held. 1 = a bot, ~0.85 = a person. */
-  hold?: number
+  readonly hold?: number
+  /** What a failed run costs, as a fraction of a run. Default ½. */
+  readonly failCost?: number
+  /** Seconds from a cash-out or a fall back to running a stage: the spawn, the teleport. Default 3. */
+  readonly overheadSeconds?: number
   /** Simulation step, seconds. Default 0.25. */
-  dt?: number
+  readonly dt?: number
 }
 
 export interface SimSample {
   t: number
   experience: number
   level: number
-  /** studs/s, world multiplier applied. */
+  /** studs/s, the world's multiplier applied. */
   speed: number
   wins: number
   /** The whole per-step product. */
   perStep: number
   world: string
-  stage: number
+  /** The stage being run, 1-based; 0 none. */
+  running: number
+  /** Stages cleared at least once in this world. */
+  cleared: number
   rebirths: number
 }
 
@@ -97,83 +86,135 @@ export interface SimEvent {
 export interface SimResult {
   /** Seconds at which each Level was first reached in the current run; index = level. Reset by a rebirth. */
   levelAt: number[]
-  /** First time each stage (by world and stage number) became passable. */
-  stageOpenAt: Map<string, number>
-  /** Everything notable, in order: stage opened, pad taken, purchase, rebirth, world entered. */
+  /** When each stage was first cleared, by `<world>/<stage number>`. */
+  clearedAt: Map<string, number>
+  /** Everything notable, in order: a stage cleared, a switch of stage farmed, a pad, a rebirth, a world. */
   events: SimEvent[]
   /** One sample per `everyS` seconds, plus the final state. */
   samples: SimSample[]
   final: SimSample
 }
 
-/** The `StepPad` rule: the best pad these Wins qualify for, else the base. */
-export const perStepFor = (wins: number, pads: readonly PadPlan[], base: number): number =>
-  pads.reduce((best, p) => (wins >= p.requiresWins && p.perStep > best ? p.perStep : best), base)
+/** A stage's gate, in studs/s: the Max Speed of its Level, times the world's multiplier. */
+export const gateSpeed = (stage: SimStage, world: Pick<SimWorld, 'speedMultiplier'>, curve: ProgressCurve): number =>
+  maxSpeedAt(stage.level, curve) * world.speedMultiplier
 
-/** Seconds to clear a gate at `speed`: `clearSeconds` at the gate, `fastClearSeconds` from twice the gate up, linear between. */
-export const clearTime = (gate: number, speed: number, clearSeconds: number, fastClearSeconds: number): number => {
-  if (gate <= 0) return fastClearSeconds
-  const over = Math.min(1, Math.max(0, speed / gate - 1))
-  return clearSeconds + (fastClearSeconds - clearSeconds) * over
+/** One run at `speed` (≥ the gate): the row's run time at the gate, shrinking with speed, never under its floor. */
+export const runSeconds = (stage: SimStage, gate: number, speed: number): number =>
+  stage.floorSeconds + Math.max(0, stage.runSeconds - stage.floorSeconds) * (speed <= 0 ? 1 : Math.min(1, gate / speed))
+
+/**
+ * Seconds a clear takes on average: the run and the trip back, plus — for the failed runs before it, `p ÷ (1 − p)` of
+ * them — `failCost` of a run and the trip back each. A chance is held under 95 %.
+ */
+export const clearSeconds = (stage: SimStage, gate: number, speed: number, failCost: number, overheadSeconds: number): number => {
+  const p = Math.min(0.95, Math.max(0, stage.failChance))
+  const run = runSeconds(stage, gate, speed)
+  return run + overheadSeconds + (p / (1 - p)) * (failCost * run + overheadSeconds)
+}
+
+/** The best pad these Wins have reached among a world's first `tiers`; the base without one. */
+export const padFor = (wins: number, pads: readonly PadTier[], tiers: number): number =>
+  pads.slice(0, Math.max(0, tiers)).reduce((best, p) => (wins >= p.requiresWins && p.perStep > best ? p.perStep : best), BASE_PER_STEP)
+
+/** A run under way: its stage's index, seconds left, and whether it is the frontier being pushed. */
+interface Run {
+  at: number
+  left: number
+  pushing: boolean
 }
 
 export const simulate = (input: SimInput, everyS = 60): SimResult => {
-  const { curve, scenario } = input
+  const { curve, pads } = input
   const dt = input.dt ?? 0.25
   const hold = Math.min(1, Math.max(0, input.hold ?? 1))
-  const worlds = [...scenario.worlds].sort((a, b) => a.levelRequired - b.levelRequired)
-  if (worlds.length === 0 || worlds.every((w) => w.stages.length === 0)) throw new Error('simulate: a world with stages is needed')
+  const failCost = Math.max(0, input.failCost ?? 0.5)
+  const overhead = Math.max(0, input.overheadSeconds ?? 3)
+  const worlds = [...input.worlds].sort((a, b) => a.levelToEnter - b.levelToEnter)
+  if (worlds.length === 0 || worlds[0]!.stages.length === 0) throw new Error('simulate: a first world with stages is needed')
 
   let step = 0
   let t = 0
   let experience = 0
   let wins = 0
   let rebirths = 0
-  let rebirthMult = 1
-  const owned = { trail: 1, aura: 1 }
-  const bought = new Set<string>()
+  let reborn = 1
   let worldIx = 0
-  let stageIx = 0
-  let progressS = 0 // seconds into the current clear
-  let padPerStep = BASE_PER_STEP // the pad taken: the best ever qualified for, kept when Wins are spent
+  /** Stages of this world cleared at least once, in order: the next is the frontier. */
+  let cleared = 0
+  /** The pad taken: the best ever reached, kept. */
+  let pad = BASE_PER_STEP
+  /** The run under way: its stage's index, seconds left, and whether it is the frontier being pushed. */
+  let run: Run | null = null
+  let farmed = -1
 
   const levelAtS: number[] = [0]
-  const stageOpenAt = new Map<string, number>()
-  const seenEmpty = new Set<string>()
+  const clearedAt = new Map<string, number>()
   const events: SimEvent[] = []
   const samples: SimSample[] = []
   let nextSample = 0
 
-  const world = (): WorldPlan => worlds[worldIx]!
+  const world = (): SimWorld => worlds[worldIx]!
   const level = (): number => levelAt(experience, curve).level
-  const speedNow = (L: number): number => maxSpeedAt(L, curve) * world().speedMultiplier
-  const perStepNow = (): number => padPerStep * world().xpMultiplier * rebirthMult * owned.trail * owned.aura
+  const speedNow = (): number => maxSpeedAt(level(), curve) * world().speedMultiplier
+  const perStep = (): number => pad * world().baseXp * reborn
+  const note = (what: string): void => void events.push({ t, what })
+  const sample = (): SimSample => ({
+    t,
+    experience,
+    level: level(),
+    speed: speedNow(),
+    wins,
+    perStep: perStep(),
+    world: world().name,
+    running: run === null ? 0 : run.at + 1,
+    cleared,
+    rebirths,
+  })
 
-  const sample = (): SimSample => {
+  /** What to run next: the frontier when passable, else the reached stage paying the most Wins a minute; `null` for none. */
+  const choose = (): Run | null => {
+    const w = world()
+    const speed = speedNow()
+    const passable = (i: number): boolean => i < w.stages.length && speed >= gateSpeed(w.stages[i]!, w, curve)
+    const seconds = (i: number): number => clearSeconds(w.stages[i]!, gateSpeed(w.stages[i]!, w, curve), speed, failCost, overhead)
+    if (cleared < w.stages.length && passable(cleared)) return { at: cleared, left: seconds(cleared), pushing: true }
+    let best = -1
+    let rate = 0
+    for (let i = 0; i < Math.min(cleared, w.stages.length); i++) {
+      if (!passable(i)) continue
+      const perMinute = (w.stages[i]!.wins / seconds(i)) * 60
+      if (perMinute > rate) {
+        best = i
+        rate = perMinute
+      }
+    }
+    if (best < 0) return null
+    if (best !== farmed) {
+      farmed = best
+      note(`farming stage ${best + 1} of ${w.name}: ${short(rate)} Wins/min`)
+    }
+    return { at: best, left: seconds(best), pushing: false }
+  }
+
+  /** Between runs: a rebirth the Level allows, then the next world its Level opens. */
+  const between = (): void => {
     const L = level()
-    return { t, experience, level: L, speed: speedNow(L), wins, perStep: perStepNow(), world: world().name, stage: world().stages[stageIx]?.stage ?? 0, rebirths }
-  }
-  const note = (what: string): void => {
-    events.push({ t, what })
-  }
-
-  /** The furthest stage of the current world the speed passes; stage 1 when none does. */
-  const bestStage = (speed: number): number => {
-    const stages = world().stages
-    let best = 0
-    for (let i = 0; i < stages.length; i++) if (stages[i]!.speed <= speed) best = i
-    return best
-  }
-
-  const shop = (kind: 'trail' | 'aura', items: readonly ShopItem[]): void => {
-    // Best affordable not yet owned. Buying a worse one than equipped is pointless, so only upgrades.
-    const candidates = items.filter((i) => !bought.has(`${kind}:${i.name}`) && i.wins <= wins && i.multiplier > owned[kind]).sort((a, b) => b.multiplier - a.multiplier)
-    const pick = candidates[0]
-    if (pick === undefined) return
-    wins -= pick.wins
-    bought.add(`${kind}:${pick.name}`)
-    owned[kind] = pick.multiplier
-    note(`${kind} ${pick.name} bought (×${pick.multiplier}) for ${pick.wins} Wins`)
+    if (L >= rebirthLevelAt(rebirths + 1, curve)) {
+      rebirths++
+      reborn = rebirthMultiplierAt(rebirths, curve)
+      note(`rebirth ${rebirths} at Level ${L}: ×${short(reborn)} XP from now on, XP and Level reset`)
+      experience = 0
+      levelAtS.length = 1
+      farmed = -1
+    }
+    const next = worlds[worldIx + 1]
+    if (next !== undefined && next.stages.length > 0 && level() >= next.levelToEnter) {
+      worldIx++
+      cleared = 0
+      farmed = -1
+      note(`entered ${next.name} at Level ${level()}`)
+    }
   }
 
   while (t < input.horizonS - 1e-9) {
@@ -181,74 +222,40 @@ export const simulate = (input: SimInput, everyS = 60): SimResult => {
       samples.push(sample())
       nextSample += everyS
     }
-    const L = level()
-    const speed = speedNow(L)
+    if (run === null) run = choose()
 
-    // World: move up when open. A world with no stages defined yet cannot be played, so it is noted and skipped.
-    while (worldIx + 1 < worlds.length && worlds[worldIx + 1]!.levelRequired <= L) {
-      const next = worlds[worldIx + 1]!
-      if (next.stages.length === 0) {
-        if (!seenEmpty.has(next.name)) {
-          seenEmpty.add(next.name)
-          note(`${next.name} open at Level ${L} — no stages defined, staying in ${world().name}`)
-        }
-        break
-      }
-      worldIx++
-      stageIx = 0
-      progressS = 0
-      note(`entered ${world().name} at Level ${L}`)
-    }
-
-    // Stage: the furthest passable; a newly opened one is an event.
-    const target = bestStage(speed)
-    if (target !== stageIx) {
-      stageIx = target
-      progressS = 0
-    }
-    const current = world().stages[stageIx]!
-    const key = `${world().name}/${current.stage}`
-    if (!stageOpenAt.has(key)) {
-      stageOpenAt.set(key, t)
-      note(`stage ${current.stage} of ${world().name} passable (needs ${current.speed} studs/s, Level ${L})`)
-    }
-
-    // Earn.
-    experience += (stepsPerMinute(L, curve) / 60) * dt * hold * perStepNow()
-    progressS += dt * hold
+    // Earn: every held step, wherever it is taken.
+    experience += (stepsPerMinute(level(), curve) / 60) * dt * hold * perStep()
     step++
     t = step * dt
 
-    // Clear.
-    if (progressS >= clearTime(current.speed, speed, scenario.clearSeconds, scenario.fastClearSeconds)) {
-      wins += current.wins
-      progressS = 0
+    if (run !== null) {
+      run.left -= dt
+      if (run.left <= 0) {
+        const w = world()
+        wins += w.stages[run.at]!.wins
+        if (run.pushing) {
+          cleared++
+          clearedAt.set(`${w.name}/${run.at + 1}`, t)
+          note(`stage ${run.at + 1} of ${w.name} cleared (Level ${level()}, ${short(wins)} Wins)`)
+        }
+        run = null
+        between()
+      }
     }
 
-    // Spend: pads are thresholds and stick; trails and auras cost.
-    const best = perStepFor(wins, scenario.pads, padPerStep)
-    if (best > padPerStep) {
-      padPerStep = best
-      note(`pad +${best}/step taken (${scenario.pads.find((p) => p.perStep === best)?.requiresWins ?? 0} Wins)`)
+    const reached = padFor(wins, pads, world().padTiers)
+    if (reached > pad) {
+      pad = reached
+      note(`pad +${short(pad)}/step taken (${short(pads.find((p) => p.perStep === pad)?.requiresWins ?? 0)} Wins)`)
     }
-    shop('trail', scenario.trails)
-    shop('aura', scenario.auras)
-
-    // Level milestones, then rebirth.
     const now = level()
     while (levelAtS.length <= now) levelAtS.push(t)
-    if (now >= rebirthLevelAt(rebirths + 1, curve)) {
-      rebirths++
-      rebirthMult = rebirthMultiplierAt(rebirths, curve)
-      note(`rebirth ${rebirths} at Level ${now}: ×${rebirthMult} from now on, XP and Level reset`)
-      experience = 0
-      levelAtS.length = 1
-    }
   }
 
   const final = sample()
   samples.push(final)
-  return { levelAt: levelAtS, stageOpenAt, events, samples, final }
+  return { levelAt: levelAtS, clearedAt, events, samples, final }
 }
 
 const clock = (s: number): string => {
@@ -279,12 +286,14 @@ const short = (n: number): string => {
 
 const pad = (s: string, w: number): string => s.padStart(w)
 
-/** The report: what the curves say, the events, then the timeline. Plain text. */
+/** The report: what it read, the Level milestones, every stage, the events, the timeline. Plain text. */
 export const formatReport = (input: SimInput, r: SimResult): string => {
   const out: string[] = []
   const c = input.curve
   out.push(`level cost: ${c.levelCost.map((p) => `L${p.x}=${short(p.y)}`).join(' → ')}; speed: ${c.speed.map((p) => `L${p.x}=${p.y}`).join(' → ')} studs/s; cadence: ${c.cadence.map((p) => `L${p.x}=${p.y}`).join(' → ')} steps/min`)
-  out.push(`${input.scenario.worlds.map((w) => `${w.name}: ${w.stages.length} stages, ×${w.xpMultiplier} XP, ×${w.speedMultiplier} speed, from Level ${w.levelRequired}`).join(' · ')}; hold ${Math.round((input.hold ?? 1) * 100)}%; ${clock(input.horizonS)}`)
+  out.push(`rebirth: ${c.rebirthLevel.map((p) => `#${p.x} at L${p.y}`).join(', ')} for ${c.rebirthMultiplier.map((p) => `#${p.x} ×${short(p.y)}`).join(', ')}; pads: ${input.pads.map((p) => `+${short(p.perStep)}@${short(p.requiresWins)}`).join(' ')}`)
+  out.push(`${input.worlds.map((w) => `${w.name}: ${w.stages.length} stages, ${w.padTiers} pads, base ×${w.baseXp} XP, ×${w.speedMultiplier} speed, from Level ${w.levelToEnter}`).join(' · ')}`)
+  out.push(`player: hold ${Math.round((input.hold ?? 1) * 100)}%, a failed run costs ${Math.round((input.failCost ?? 0.5) * 100)}% of a run, ${input.overheadSeconds ?? 3}s back to a stage; ${clock(input.horizonS)}`)
   out.push('')
   out.push('Level milestones (current run)')
   for (const L of [1, 2, 5, 10, 15, 20, 30, 40, 50, 75, 100, 120, 150, 200, 300, 400]) {
@@ -292,14 +301,24 @@ export const formatReport = (input: SimInput, r: SimResult): string => {
     if (at === undefined) continue
     out.push(`  L${pad(String(L), 3)}  ${pad(clock(at), 7)}   ${pad(maxSpeedAt(L, c).toFixed(0), 4)} studs/s   ${pad(stepsPerMinute(L, c).toFixed(0), 4)} steps/min`)
   }
+  for (const w of input.worlds) {
+    out.push('')
+    out.push(`${w.name} — stage: Level, gate studs/s, Wins, run/floor s, fail %, first cleared`)
+    w.stages.forEach((s, i) => {
+      const at = r.clearedAt.get(`${w.name}/${i + 1}`)
+      out.push(
+        `  ${pad(String(i + 1), 2)}  L${pad(String(s.level), 3)} ${pad(gateSpeed(s, w, c).toFixed(0), 5)} ${pad(short(s.wins), 7)}  ${pad(`${s.runSeconds}/${s.floorSeconds}`, 7)} ${pad(String(Math.round(s.failChance * 100)), 3)}%  ${at === undefined ? '—' : clock(at)}`,
+      )
+    })
+  }
   out.push('')
   out.push('Events')
   for (const e of r.events) out.push(`  ${pad(clock(e.t), 7)}  ${e.what}`)
   out.push('')
-  out.push(`${pad('time', 7)} ${pad('XP', 9)} ${pad('level', 5)} ${pad('studs/s', 7)} ${pad('Wins', 8)} ${pad('/step', 9)} ${pad('world', 8)} ${pad('stage', 5)} ${pad('rebirth', 7)}`)
+  out.push(`${pad('time', 7)} ${pad('XP', 9)} ${pad('level', 5)} ${pad('studs/s', 7)} ${pad('Wins', 8)} ${pad('/step', 9)} ${pad('world', 14)} ${pad('run', 4)} ${pad('clear', 5)} ${pad('rebirth', 7)}`)
   for (const s of r.samples) {
     out.push(
-      `${pad(clock(s.t), 7)} ${pad(short(s.experience), 9)} ${pad(String(s.level), 5)} ${pad(s.speed.toFixed(0), 7)} ${pad(short(s.wins), 8)} ${pad(short(s.perStep), 9)} ${pad(s.world, 8)} ${pad(String(s.stage), 5)} ${pad(String(s.rebirths), 7)}`,
+      `${pad(clock(s.t), 7)} ${pad(short(s.experience), 9)} ${pad(String(s.level), 5)} ${pad(s.speed.toFixed(0), 7)} ${pad(short(s.wins), 8)} ${pad(short(s.perStep), 9)} ${pad(s.world, 14)} ${pad(String(s.running), 4)} ${pad(String(s.cleared), 5)} ${pad(String(s.rebirths), 7)}`,
     )
   }
   return out.join('\n')

@@ -12,7 +12,8 @@ import { StepPad } from './stepPad'
  * - `baseXp`, `speedMultiplier` — what a step pays, times its pad's value (World 1 = 1), and Max Speed times this.
  * - `levelToEnter` — the Level the world opens at. Nothing travels between worlds yet: the simulator reads it.
  * - `stages` — a row a stage: the Obstacle, the Level it requires, the Wins it pays, how long a run takes at its gate
- *   speed and the floor no speed goes under (a timer, a door), and the falls it costs. A row's place is its stage
+ *   speed and the floor no speed goes under (a timer, a door), and the chance a run fails (Kodjo's call, over a count
+ *   of falls). A row's place is its stage
  *   number and its Checkpoint number; dragging a row moves all of it.
  * - `pads` — the step pads of its spawn, in order: a pad's place is its tier in the game's pad table (`padTable.ts`).
  *
@@ -28,14 +29,14 @@ export const STAGE_ROW = {
   wins: { kind: 'number', default: 1, min: 1, step: 1, label: 'Wins' },
   gateSeconds: { kind: 'number', default: 45, min: 0, step: 1, label: 'run s' },
   floorSeconds: { kind: 'number', default: 5, min: 0, step: 1, label: 'floor s' },
-  falls: { kind: 'number', default: 0, min: 0, step: 0.1, label: 'falls' },
+  fail: { kind: 'number', default: 0, min: 0, max: 95, step: 1, label: 'fail %' },
 } satisfies ParamDecls
 
 /**
  * World 1's design table (`docs/games/keyboard/world-1.md`, Kodjo's numbers), as a new World's first rows: the Level
- * is the speed it needs on the default speed curve, rounded up; every run 45 s at the gate, 5 s at best, no falls.
+ * is the speed it needs on the default speed curve, rounded up; every run 45 s at the gate, 5 s at best, never failed.
  */
-const DESIGN_STAGES: readonly [level: number, wins: number][] = [
+export const DESIGN_STAGES: readonly [level: number, wins: number][] = [
   [0, 1],
   [0, 3],
   [0, 10],
@@ -63,7 +64,7 @@ export const World = defineComponent({
       kind: 'list',
       label: 'stages',
       item: STAGE_ROW,
-      default: DESIGN_STAGES.map(([level, wins]) => ({ obstacle: null, level, wins, gateSeconds: 45, floorSeconds: 5, falls: 0 })),
+      default: DESIGN_STAGES.map(([level, wins]) => ({ obstacle: null, level, wins, gateSeconds: 45, floorSeconds: 5, fail: 0 })),
     },
     pads: { kind: 'list', label: 'step pads', item: { pad: { kind: 'componentRef', of: StepPad.type, label: 'step pad' } }, default: [] },
   },

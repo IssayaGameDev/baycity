@@ -40,6 +40,6 @@ Fixed alongside:
   icon** on screen, the Rebirth button.
 - **Time per clear**: 5 to 45 seconds a stage, shrinking with the player's speed.
 
-Machine copy for the simulator: `modes/keyboard/balance.world1.json` (`balance.test.ts` asserts it matches this
-table). Open: Wins for stage 15 (irrelevant for now); the required speeds are read by eye from play and will move
+A new `World`'s stage rows are this table (`DESIGN_STAGES`, [world.md](world.md); `balance.test.ts` asserts they
+match). Open: Wins for stage 15 (irrelevant for now); the required speeds are read by eye from play and will move
 with the speed curve.
