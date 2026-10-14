@@ -146,18 +146,22 @@ export const createMotionPreview = (host: MotionPreviewHost): MotionPreview => {
   const applyAuthored = (): void => {
     const open = host.doc()
     if (open === null) return
-    for (let i = 0; i < open.count(); i += 1) {
-      const g = host.groupAt(i)
-      if (g === undefined) continue
-      const t = open.transformOf(i)
-      g.position.set(t.position.x, t.position.y, t.position.z)
-      const q = eulerToQuat(t.rotation ?? vec3(0, 0, 0))
-      g.quaternion.set(q.x, q.y, q.z, q.w)
-      const s = t.scale ?? vec3(1, 1, 1)
-      g.scale.set(s.x, s.y, s.z)
-      g.visible = true
-      setOpacity(g, 1)
-    }
+    // One walk for the pass: `count` and `transformOf` each walk the whole level outside one, and a reparent of
+    // 52 objects on a level of a thousand spent 44 s here (ADR 0167).
+    open.reading(() => {
+      for (let i = 0; i < open.count(); i += 1) {
+        const g = host.groupAt(i)
+        if (g === undefined) continue
+        const t = open.transformOf(i)
+        g.position.set(t.position.x, t.position.y, t.position.z)
+        const q = eulerToQuat(t.rotation ?? vec3(0, 0, 0))
+        g.quaternion.set(q.x, q.y, q.z, q.w)
+        const s = t.scale ?? vec3(1, 1, 1)
+        g.scale.set(s.x, s.y, s.z)
+        g.visible = true
+        setOpacity(g, 1)
+      }
+    })
   }
 
   const setTime = (ms: number): void => {

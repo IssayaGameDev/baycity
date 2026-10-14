@@ -152,4 +152,33 @@ describe('the Motion button', () => {
     expect(preview.withAuthoredPoses(() => group.scale.x)).toBe(1)
     expect(group.scale.x).toBeCloseTo(1.5, 9)
   })
+
+  it('puts the authored poses on in one walk of the level, not two per object (ADR 0167)', () => {
+    const doc = docOf([node('a', box), node('b', box), node('c', box)])
+    let open = 0
+    let outside = 0
+    // Outside a `reading` pass every `count` and `transformOf` walks the whole level: count the ones made there.
+    const watched: typeof doc = {
+      ...doc,
+      reading: (read) => {
+        open++
+        try {
+          return doc.reading(read)
+        } finally {
+          open--
+        }
+      },
+      count: () => {
+        if (open === 0) outside++
+        return doc.count()
+      },
+      transformOf: (i) => {
+        if (open === 0) outside++
+        return doc.transformOf(i)
+      },
+    }
+    const preview = createMotionPreview({ doc: () => watched, groupAt: () => new THREE.Group(), inspectorSync: () => {}, renderStatus: () => {}, toolbarRender: () => {} })
+    preview.withAuthoredPoses(() => undefined)
+    expect(outside).toBe(0)
+  })
 })

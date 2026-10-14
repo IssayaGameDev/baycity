@@ -579,9 +579,12 @@ const localInside = (
  * the **authored** poses (ADR 0126) and rounded as the document stores it — what a reparent writes, so nothing jumps.
  * `undefined` when a group is missing. The Hierarchy's drag and the reparent action both write this.
  */
-const reframedLocal = (i: number, parent: number | null): Transform | undefined => {
+const reframedLocal = (i: number, parent: number | null): Transform | undefined => motion.withAuthoredPoses(() => reframedAuthored(i, parent))
+
+/** `reframedLocal`, the groups already at their authored poses — for a caller reading several in one pass. */
+const reframedAuthored = (i: number, parent: number | null): Transform | undefined => {
   const parentGroup = parent === null ? null : (meshes.groupAt(parent) ?? null)
-  const local = motion.withAuthoredPoses(() => localInside(meshes.groupAt(i), parentGroup))
+  const local = localInside(meshes.groupAt(i), parentGroup)
   if (local === null) return undefined
   return {
     position: local.position,
@@ -1465,7 +1468,9 @@ const hierarchy: Hierarchy = createHierarchy($<HTMLDivElement>('#hierarchy'), {
      * authored plus whatever the sequences contribute, and reading those wrote the animation's position into
      * the file for good.
      */
-    const planned = moving.map((i) => ({ ref: open.refAt(i), reframed: reframedLocal(i, parent) }))
+    // One pass putting every group at its authored pose, not one per object (ADR 0167).
+    const reframed = motion.withAuthoredPoses(() => moving.map((i) => reframedAuthored(i, parent)))
+    const planned = moving.map((i, k) => ({ ref: open.refAt(i), reframed: reframed[k] }))
     // Refs, not indices: each move renumbers the tree depth-first, so every index after the first is stale.
     const parentRef = parent === null ? null : open.refAt(parent)
 
