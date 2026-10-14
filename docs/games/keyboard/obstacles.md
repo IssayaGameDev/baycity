@@ -42,7 +42,9 @@ the client exists waits in `reachedEarly`. Nothing on screen (Kodjo's call).
 
 `KeyboardSession.currentObstacle(): WorldNode | null` — the last Obstacle whose trigger was walked into (set on its
 `progress`), or the stop the window landed on (`KeyboardTeleport.obstacle`). `null` at the start and after a death
-(`takeDeath`), a cash-out, `respawnAt` (respawn, Restart) and a teleport to Start. The player's own: not sent, not saved,
+(`takeDeath`), a cash-out, `respawnAt` (respawn, Restart) and a teleport to Start — except when `respawnTo` (the debug
+pane's `respawn at checkpoint`, [debug.md](debug.md)) puts the respawn on a checkpoint: then it is that one's, and the
+next tick's teleport turns the player its way. The player's own: not sent, not saved,
 drawn nowhere yet.
 
 ## The text ahead (ADR 0213, Kodjo's calls)

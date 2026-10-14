@@ -132,6 +132,11 @@ const reach = (node: WorldNode): void => {
 const isReached = (key: string): boolean => levelName !== null && (reached[levelName] ?? []).includes(key)
 /** Debug (Kodjo's call, for testing levels): every checkpoint open in the teleport window. Reaches and saves nothing. */
 const unlock = { all: false }
+/**
+ * Debug (Kodjo's call): a respawn puts you at the checkpoint of the obstacle you were on — the last trigger walked into
+ * or checkpoint teleported to — facing its way, rather than at the spawn. From the spawn, the spawn.
+ */
+const respawnHere = { on: false }
 
 const client = await startTpsClient({
   ...KEYBOARD_MODE,
@@ -183,6 +188,11 @@ const client = await startTpsClient({
         insideOf = node
         insideSeenMs = performance.now()
         reach(node)
+      },
+      // The debug pane's respawn at the obstacle you were on.
+      respawnTo: (on) => {
+        const stop = respawnHere.on && on !== null ? checkpoints.find((s) => s.node === on) : undefined
+        return stop === undefined ? null : { position: stop.position, yaw: stop.yaw, obstacle: stop.node }
       },
       // The teleport window's pick, handed over once (ADR 0203).
       requested: () => {
@@ -506,3 +516,4 @@ loop.addButton({ title: 'Add wins' }).on('click', () => {
   persist()
 })
 loop.addBinding(unlock, 'all', { label: 'unlock checkpoints' }).on('change', () => teleportWindow?.refresh())
+loop.addBinding(respawnHere, 'on', { label: 'respawn at checkpoint' })

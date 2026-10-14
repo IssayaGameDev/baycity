@@ -75,6 +75,12 @@ export interface KeyboardSessionOptions extends ModeSessionOptions {
    * game saves it once.
    */
   readonly onReached?: (node: WorldNode) => void
+  /**
+   * Where a respawn — after a death, or the pause menu's Restart — puts the player instead of the spawn, given the
+   * obstacle they were on (`null` from the spawn); `null` for the spawn. Keyboard's debug pane only: the game respawns at
+   * the spawn (Kodjo's design).
+   */
+  readonly respawnTo?: (on: WorldNode | null) => KeyboardTeleport | null
 }
 
 /** The platform's session, plus what this game's rules know that the platform has no word for. */
@@ -105,6 +111,8 @@ export const keyboardSession = (loaded: LoadedLevel, opts: KeyboardSessionOption
   let teleport: Teleport | null = null
   /** See `KeyboardSession.currentObstacle`. */
   let current: WorldNode | null = null
+  /** The obstacle a death came on, for the respawn after it — the death itself puts `current` back to the spawn. */
+  let diedOn: WorldNode | null = null
   return {
     effects: {
       kill: () => {
@@ -139,15 +147,24 @@ export const keyboardSession = (loaded: LoadedLevel, opts: KeyboardSessionOption
         opts.onCashOut?.(pad.wins, node)
       },
     },
-    // A respawn and the pause menu's Restart both ask here, and both are back at the spawn.
+    // A respawn and the pause menu's Restart both ask here, and both are back at the spawn — unless the game says
+    // otherwise (`respawnTo`), which also turns the player its way, through the next tick's teleport.
     respawnAt: () => {
-      current = null
-      return spawn
+      const on = diedOn ?? current
+      diedOn = null
+      const back = opts.respawnTo?.(on) ?? null
+      current = back?.obstacle ?? null
+      if (back === null) return spawn
+      if (teleport === null) teleport = { position: back.position, ...(back.yaw === undefined ? {} : { yaw: back.yaw }) }
+      return back.position
     },
     takeDeath: () => {
       const died = killed
       killed = false
-      if (died) current = null
+      if (died) {
+        diedOn = current
+        current = null
+      }
       return died
     },
     // A cash-out first; a request waits for the tick after, rather than being lost under it.

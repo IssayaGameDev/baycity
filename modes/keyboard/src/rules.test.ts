@@ -366,6 +366,44 @@ describe('obstacles (ADR 0211)', () => {
     rules.respawnAt()
     expect(rules.currentObstacle(), 'a respawn, or Restart').toBeNull()
   })
+
+  /** The debug pane's `respawn at checkpoint` (Kodjo's call): a death on an obstacle comes back on its checkpoint. */
+  it('respawns where the game says, given the obstacle the death came on, facing its way', () => {
+    const loaded = level()
+    const stops = checkpointsOf(loaded, STAND_OFFSET)
+    const seen: (WorldNode | null)[] = []
+    const rules = keyboardSession(loaded, {
+      respawnTo: (on) => {
+        seen.push(on)
+        const stop = stops.find((s) => s.node === on)
+        return stop === undefined ? null : { position: stop.position, yaw: stop.yaw, obstacle: stop.node }
+      },
+    })
+    const character = characterAccess({ launch: 0, impulse: vec3(0, 0, 0), vx: 0, vy: 0, vz: 0, carry: vec3(0, 0, 0), grounded: true, body: { translation: () => vec3(0, 0, 0) } })
+    const runtime = createComponentRuntime(loaded, KEYBOARD_REGISTRY, { character, effects: rules.effects })
+    runtime.attach(0, 0, 1)
+    const b = stops[1]!
+    runtime.contact([copies(loaded, 'zone')[1]!.colliderHandles[0]!])
+    rules.effects.kill()
+    expect(rules.takeDeath()).toBe(true)
+    expect(rules.respawnAt(), 'on its checkpoint, not the spawn').toEqual(b.position)
+    expect(seen, 'asked with the obstacle the death came on').toEqual([b.node])
+    expect(rules.currentObstacle(), 'and still on it').toBe(b.node)
+    expect(rules.takeTeleport!(), 'turned its way on the next tick').toEqual({ position: b.position, yaw: b.yaw })
+    // Still on it: the next death comes back there too.
+    rules.effects.kill()
+    rules.takeDeath()
+    rules.takeTeleport!()
+    expect(rules.respawnAt()).toEqual(b.position)
+    // From the spawn there is no obstacle to come back to: the game is asked with none, and says the spawn.
+    seen.length = 0
+    const fromSpawn = keyboardSession(loaded, { respawnTo: (on) => (seen.push(on), null) })
+    fromSpawn.effects.kill()
+    fromSpawn.takeDeath()
+    expect(fromSpawn.respawnAt(), 'the spawn').toEqual(vec3(0, STAND_OFFSET, 0))
+    expect(seen).toEqual([null])
+    expect(fromSpawn.takeTeleport!(), 'and no turn').toBeNull()
+  })
 })
 
 describe('step pads (ADR 0082)', () => {
