@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import { BASE_PER_STEP } from './progression'
-import { localKeyboardSave, withReached } from './save'
+import { localCheckpointSpots, localKeyboardSave, withReached } from './save'
 
 // An in-memory localStorage (this runs in the node test env).
 let store: Map<string, string>
@@ -51,5 +51,18 @@ describe("the game's save, through its adapter", () => {
     expect(one).toEqual({ w1: ['a'] })
     expect(withReached(one, 'w1', 'a'), 'already there: the same object').toBe(one)
     expect(withReached(one, 'w2', 'a')).toEqual({ w1: ['a'], w2: ['a'] })
+  })
+})
+
+/** Where `respawn at checkpoint` starts the next visit (Kodjo's call): the last checkpoint, per level. */
+describe('the checkpoint a tester was last on', () => {
+  it('keeps a key per level, and nothing from an unreadable store', () => {
+    expect(localCheckpointSpots().load()).toEqual({})
+    localCheckpointSpots().save({ Roblox_World_1: 'b', keyboard: 'a#2' })
+    expect(localCheckpointSpots().load()).toEqual({ Roblox_World_1: 'b', keyboard: 'a#2' })
+    store.set('keyboard.debugSpot', JSON.stringify({ good: 'x', bad: 3 }))
+    expect(localCheckpointSpots().load()).toEqual({ good: 'x' })
+    store.set('keyboard.debugSpot', '{nope')
+    expect(localCheckpointSpots().load()).toEqual({})
   })
 })

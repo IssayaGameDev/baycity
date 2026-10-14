@@ -22,7 +22,7 @@ import { Treadmill, TREADMILL_STATE, treadmillStepValue, type TreadmillTick } fr
 import { padTop } from './components/wins'
 import { qualifies, StepPad, type StepPadOffer } from './components/stepPad'
 import { KeyboardStyle } from './data/keyboardStyle'
-import { localKeyboardSave, withReached } from './save'
+import { localCheckpointSpots, localKeyboardSave, withReached } from './save'
 
 /**
  * Keyboard Escape, as an application (ADR 0069, ADR 0071).
@@ -144,6 +144,10 @@ const unlock = { all: keptChoices.unlockCheckpoints === true }
  * or checkpoint teleported to — facing its way, rather than at the spawn. From the spawn, the spawn.
  */
 const respawnHere = { on: keptChoices.respawnAtCheckpoint === true }
+/** The checkpoint a tester was last on, per level: where `respawn at checkpoint` starts the next visit. */
+const spots = localCheckpointSpots()
+/** The obstacle last kept there, so a frame writes only when it changes. */
+let spotKept: WorldNode | null = null
 const keepDebug = (): void => debugKept.save({ ...debugKept.load(), unlockCheckpoints: unlock.all, respawnAtCheckpoint: respawnHere.on })
 
 const client = await startTpsClient({
@@ -261,6 +265,13 @@ const hud = createHud(client, curve)
 const popups = createPopups(client, pops)
 levelName = client.levelName
 for (const node of reachedEarly.splice(0)) reach(node)
+// `respawn at checkpoint` on: this visit starts on the checkpoint the last one was on (Kodjo's call), through the
+// teleport the window uses — facing its way, the obstacle you are on set.
+{
+  const key = levelName === null ? undefined : spots.load()[levelName]
+  const stop = respawnHere.on && key !== undefined ? checkpoints.find((s) => s.key === key) : undefined
+  if (stop !== undefined) wantTeleport = { position: stop.position, yaw: stop.yaw, obstacle: stop.node }
+}
 teleportWindow = createTeleportWindow(client, {
   rows: () => teleportRows(start, checkpoints, (key) => unlock.all || isReached(key)),
   go: (to) => {
@@ -409,6 +420,12 @@ client.onFrame((dt) => {
   // or hidden over `TEXT_FADE_SECONDS`.
   const ownParts = me === null ? null : client.partsOf(me)
   const current = session?.currentObstacle() ?? null
+  // The checkpoint you are on, kept for the next visit's `respawn at checkpoint` — the latest one, never none.
+  if (current !== null && current !== spotKept && levelName !== null) {
+    const stop = checkpoints.find((s) => s.node === current)
+    if (stop !== undefined) spots.save({ ...spots.load(), [levelName]: stop.key })
+    spotKept = current
+  }
   const inside = current !== null && insideOf === current && performance.now() - insideSeenMs < 3 * TICK_DT * 1000
   const ahead = ownParts === null ? null : shownText(checkpoints, current, inside, standing(ownParts))
   for (const stop of checkpoints)

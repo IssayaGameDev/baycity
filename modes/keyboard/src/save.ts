@@ -80,3 +80,22 @@ export const withReached = (reached: KeyboardSave['reached'], level: string, key
   const have = reached[level] ?? []
   return have.includes(key) ? reached : { ...reached, [level]: [...have, key] }
 }
+
+/**
+ * The checkpoint a tester was last on, by level name (`CheckpointStop.key`) — what the debug pane's `respawn at
+ * checkpoint` starts the next visit at (Kodjo's call). A tester's convenience, not progress: its own key, through an
+ * adapter as every save is. Best-effort: none on a failure.
+ */
+export const localCheckpointSpots = (): PersistenceAdapter<Readonly<Record<string, string>>> => ({
+  load: () => {
+    try {
+      const raw = localStorage.getItem('keyboard.debugSpot')
+      const parsed: unknown = raw === null ? {} : JSON.parse(raw)
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {}
+      return Object.fromEntries(Object.entries(parsed).filter(([, v]) => typeof v === 'string')) as Record<string, string>
+    } catch {
+      return {}
+    }
+  },
+  save: (spots) => write('keyboard.debugSpot', JSON.stringify(spots)),
+})
