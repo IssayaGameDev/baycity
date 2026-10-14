@@ -20,7 +20,12 @@ Package `packages/components`. Headless; deps `@mp/content`, `@mp/core` (`@mp/ph
 | `collider` | `default: ColliderDesc` | `ColliderDesc` | per kind; convex ≥ 4 points |
 | `stages` | `default: readonly Stage[]` | a sequence's stages of steps (ADR 0137) | whole, by `stagesProblem` (`sequences.md`) |
 | `string` `multiline` (ADR 0189) | `multiline?: true` | `string` | the Inspector draws a text area: Enter a new line, leaving it saves |
-| `list` (ADR 0182) | `item: ParamDecls` (a row's fields), `default: rows` | `readonly Params<item>[]` — each row read and defaulted as parameters are | an array of objects, each row by `readParams(item)`, naming `key[n].field` |
+| `list` (ADR 0182) | `item: ParamDecls` (a row's fields — a `componentRef` among them, ADR 0222), `default: rows` | `readonly Params<item>[]` — each row read and defaulted as parameters are | an array of objects, each row by `readParams(item)`, naming `key[n].field` |
+
+Every kind also takes `label?`, `when?` (shown only while another parameter holds one of its values) and `hidden?: true`
+(ADR 0222: never in the Inspector — a value another component `drives`; stored, read and driven as any other).
+`visibleParams(decls, values)` is what the Inspector shows. `refPathsOf(decls)`: every reference a re-id follows — `key`
+for a `nodeRef`/`componentRef`, `key[].column` for one in a list's rows (`retargetParams`, `content.md`).
 | `nodeRef` | — | `string \| null`, default `null` | target unchecked |
 | `componentRef` (ADR 0177) | `of: string` — the component type it takes; `contacts?: true` (to a Collider, ADR 0210) — a touch on it runs the holder's `onContact` too | `ComponentRef \| null` = `{ node, component }` (a node id, found in the reference's scope as a `nodeRef` is, and one of its components by id), default `null` | shape; target unchecked. A bare node id — the old shape, until the box's content is migrated — reads as `{ node, component: '' }`: the node's first of the type |
 
@@ -65,7 +70,7 @@ interface ComponentSpec<D, S> {
 
 `ComponentDef` = same minus hooks, plus `hooks?: ErasedHooks` (absent → data-only, runner skips) and `drives?(raw: RawParams)` (the typed one, its params read by `readParams`). `HOOK_NAMES` is the one list both sides read.
 
-**`drives`** (ADR 0210): the loader applies them once the tree is built (`drivesOf` + `drivenComponents`, `@mp/content`), so `WorldNode.components` — every rule, every `componentOn` — and a driven `Text`'s drawn text carry the driven values; the editor's `textSpec` applies them too. The target keeps its own parameter; the drive wins. A reference that does not resolve drives nothing.
+**`drives`** (ADR 0210): the loader applies them once the tree is built (`settleDrives` + `drivenComponents`, `@mp/content`), so `WorldNode.components` — every rule, every `componentOn` — and a driven `Text`'s drawn text carry the driven values; the editor's `textSpec` applies them too. **A chain settles** (ADR 0222): a driven component's own drives read what it was driven to — four passes, recomputed, never stacked — so Keyboard's World sets an Obstacle's Wins and the Obstacle sets them on its pad. The target keeps its own parameter; the drive wins. A reference that does not resolve drives nothing.
 
 ## Hooks — `packages/components/src/runtime.ts`
 

@@ -82,12 +82,15 @@ describe('what is live, and what a material must be', () => {
     expect(validateLiveAsset('texture', {})).toMatch(/not a live asset/)
   })
 
-  it('accepts a game’s data file (ADR 0162): its components by name, its settings numbers or curve points', () => {
+  it('accepts a game’s data file (ADR 0162): its components by name, its settings numbers, curve points or table rows', () => {
     expect(validateLiveAsset('game', { components: ['Hazard'] })).toBeNull()
     expect(validateLiveAsset('game', { components: [], settings: { keyPitch: 1, speed: [{ x: 0, y: 10 }] } })).toBeNull()
+    // A table (ADR 0222): rows of numbers. Which shape a key should be is the game's to know; the editor sends it right.
+    expect(validateLiveAsset('game', { components: [], settings: { pads: [{ perStep: 1, requiresWins: 0 }] } })).toBeNull()
     expect(validateLiveAsset('game', { settings: {} })).toMatch(/components/)
     expect(validateLiveAsset('game', { components: [], settings: { keyPitch: '1' } })).toMatch(/keyPitch/)
-    expect(validateLiveAsset('game', { components: [], settings: { speed: [{ x: 0 }] } })).toMatch(/speed/)
+    expect(validateLiveAsset('game', { components: [], settings: { speed: [{ x: 0, y: 'up' }] } })).toMatch(/speed/)
+    expect(validateLiveAsset('game', { components: [], settings: { pads: [1, 2] } })).toMatch(/pads/)
     expect([gameDocId('keyboard'), gameOfDocId('game:keyboard'), gameOfDocId('0123456789abcdef')]).toEqual(['game:keyboard', 'keyboard', null])
   })
 

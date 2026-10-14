@@ -10,6 +10,7 @@ import { Obstacle } from './components/obstacle'
 import { STEPPER_DEF } from './components/steps'
 import { Treadmill, type TreadmillTick } from './components/treadmill'
 import { WinsPad } from './components/wins'
+import { World } from './components/world'
 import game from '@content/keyboard/game.json'
 
 import { curveFrom, type ProgressCurve } from './progression'
@@ -39,7 +40,7 @@ export const GAME_CURVE: ProgressCurve = curveFrom((game as { settings?: unknown
  */
 export const GAME_KEYS: KeyGeometry = keyGeometryFrom((game as { settings?: Record<string, unknown> }).settings)
 
-export const KEYBOARD_REGISTRY = createRegistry([...ENGINE_COMPONENTS, ...PLAYER_COMPONENTS, LOCOMOTION_DEF, STEPPER_DEF, Keyboard, WinsPad, Treadmill, StepPad, Obstacle, ...sharedComponents(game.components)])
+export const KEYBOARD_REGISTRY = createRegistry([...ENGINE_COMPONENTS, ...PLAYER_COMPONENTS, LOCOMOTION_DEF, STEPPER_DEF, Keyboard, WinsPad, Treadmill, StepPad, Obstacle, World, ...sharedComponents(game.components)])
 
 /** How far above a spawn node the character's origin sits — half the capsule, plus its cap. */
 export const STAND_OFFSET = CHAR_HALF_HEIGHT + CHAR_RADIUS

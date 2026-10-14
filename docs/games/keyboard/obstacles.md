@@ -13,9 +13,9 @@ into a placement (`<placement>/<node>`, ADR 0219).
 | `teleport` | nodeRef | — | where the teleport lands: that node's position + `STAND_OFFSET`, facing its +Z. Empty: the Obstacle's own node |
 | `trigger` | componentRef Collider, `contacts` | — | walking into it reaches the checkpoint. Empty or unresolved: never reached |
 | `winsPad` | componentRef WinsPad | — | the pad whose `wins` this sets |
-| `wins` | number ≥ 1 | 1 | what that pad pays, over its own (`drives`, ADR 0210) |
+| `wins` | number ≥ 1, **hidden** | 1 | what that pad pays, over its own (`drives`, ADR 0210) — set by the level's World, by the stage row naming this Obstacle ([world.md](world.md), ADR 0222) |
 | `requiredLevelText` | componentRef Text | — | the Text this writes: `requiresLevelText(X)` = `Requires Level X` |
-| `requiredLevel` | number ≥ 0 | 0 | X. Gates nothing yet |
+| `requiredLevel` | number ≥ 0, **hidden** | 0 | X, set by the World as `wins` is. Gates nothing yet |
 | `safeZoneText` | componentRef Text | — | a Text of its own words, shown while this is the obstacle ahead |
 
 `drives` sets the pad's `wins` and the required-level text's `text` as the level loads, so the rules, the drawn sign and the editor
@@ -29,7 +29,9 @@ checkpointsOf(loaded: Pick<LoadedLevel, 'allNodes' | 'findNode'>, standOffset: n
 interface CheckpointStop { number; node: WorldNode; position: Vec3; yaw: number; key: string; pivot: Vec3; safeZoneText; requiredLevelText }
 ```
 
-Every Obstacle node in Hierarchy order — `allNodes`, depth first — numbered from 1. `key` = the node's id, `#2`,
+`checkpointsOf(loaded, standOffset, order)`: in `order` — the World's stage rows (`stageOrderOf`, [world.md](world.md)),
+so an Obstacle it lists in no row is no checkpoint — or, in a level without a World or whose World lists none yet,
+every Obstacle node in Hierarchy order — `allNodes`, depth first — numbered from 1. `key` = the node's id, `#2`,
 `#3`… on later nodes sharing one.
 
 ## Reached

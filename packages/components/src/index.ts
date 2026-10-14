@@ -9,7 +9,7 @@
  */
 export const COMPONENTS_VERSION = '0.0.0' as const
 
-export { ComponentError, defaultsOf, readParams, visibleParams } from './params'
+export { ComponentError, defaultsOf, readParams, refPathsOf, visibleParams } from './params'
 export type {
   AssetSpec,
   BoolSpec,

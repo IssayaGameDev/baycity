@@ -1,6 +1,6 @@
 import type { Registry } from '@mp/components'
 import { hydratePrefabs, isSegment, libraryOf, mayUse, parseQualified, qualify, stripHydrated, unlinkPrefab, type AssetEntry, type Level, type PrefabSource, type UnlinkDeps } from '@mp/content'
-import { isSharedComponent } from '@mp/components'
+import { isSharedComponent, refPathsOf } from '@mp/components'
 
 import type { AssetLibrary } from './assetsApi'
 import { renamedTo } from './assetTree'
@@ -226,10 +226,10 @@ export const createFileActions = (host: FileActionsHost) => {
     return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('')
   }
 
-  /** Every reference parameter a component type declares — what a re-id has to follow (ADR 0097, ADR 0177). */
+  /** Every reference a component type declares, as paths — what a re-id has to follow (ADR 0097, ADR 0177, ADR 0222). */
   const nodeRefKeysOf = (type: string): string[] => {
     const def = host.registry().get(type)
-    return def === undefined ? [] : Object.entries(def.params).filter(([, spec]) => spec.kind === 'nodeRef' || spec.kind === 'componentRef').map(([key]) => key)
+    return def === undefined ? [] : refPathsOf(def.params)
   }
 
   /**

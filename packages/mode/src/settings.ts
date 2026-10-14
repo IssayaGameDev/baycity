@@ -10,7 +10,8 @@ import { normalizePoints, type Beyond, type CurvePoint, type Interpolation } fro
  * whatever the file has over the declared defaults — a key the file lacks is its default, a key the game no
  * longer declares is ignored, a value of the wrong shape is the default.
  *
- * Two kinds: a **number**, one field; a **curve**, control points on a graph (`curve.ts`).
+ * Three kinds: a **number**, one field; a **curve**, control points on a graph (`curve.ts`); a **table**, rows of
+ * numbers in named columns (ADR 0222) — Keyboard's step pads, a tier a row.
  */
 export interface NumberSetting {
   kind?: 'number'
@@ -40,13 +41,51 @@ export interface CurveSetting {
   default: readonly CurvePoint[]
 }
 
-export type SettingDecl = NumberSetting | CurveSetting
+/** One column of a table: a number per row, as a number setting is. */
+export interface TableColumn {
+  label: string
+  default: number
+  min?: number
+  max?: number
+  step?: number
+}
+
+/** Rows of numbers in named columns (ADR 0222); the editor draws them as a list field — add, remove, drag to reorder. */
+export interface TableSetting {
+  kind: 'table'
+  label: string
+  hint?: string
+  columns: Readonly<Record<string, TableColumn>>
+  default: readonly Readonly<Record<string, number>>[]
+}
+
+export type SettingDecl = NumberSetting | CurveSetting | TableSetting
 export type SettingDecls = Readonly<Record<string, SettingDecl>>
 
-export type SettingValue<D extends SettingDecl> = D extends CurveSetting ? CurvePoint[] : number
+/** A table's rows, every column a number. */
+export type TableRows = Record<string, number>[]
+
+export type SettingValue<D extends SettingDecl> = D extends CurveSetting ? CurvePoint[] : D extends TableSetting ? TableRows : number
 export type SettingValues<D extends SettingDecls> = { [K in keyof D]: SettingValue<D[K]> }
 
 export const isCurveSetting = (d: SettingDecl): d is CurveSetting => d.kind === 'curve'
+export const isTableSetting = (d: SettingDecl): d is TableSetting => d.kind === 'table'
+
+/**
+ * A table's rows from whatever the file holds: a list of objects, each column the row's finite number or the column's
+ * default; anything else is the declared rows.
+ */
+const readTable = (decl: TableSetting, raw: unknown): TableRows => {
+  if (!Array.isArray(raw) || !raw.every((r) => typeof r === 'object' && r !== null && !Array.isArray(r))) return decl.default.map((r) => ({ ...r }))
+  return raw.map((r: Record<string, unknown>) => {
+    const row: Record<string, number> = {}
+    for (const [key, col] of Object.entries(decl.columns)) {
+      const v = r[key]
+      row[key] = typeof v === 'number' && Number.isFinite(v) ? v : col.default
+    }
+    return row
+  })
+}
 
 /** One declared value from whatever the file holds: the file's when it has the right shape, else the default. */
 export const readSetting = <D extends SettingDecl>(decl: D, raw: unknown): SettingValue<D> => {
@@ -54,6 +93,7 @@ export const readSetting = <D extends SettingDecl>(decl: D, raw: unknown): Setti
     const pts = normalizePoints(raw)
     return (pts ?? decl.default.map((p) => ({ ...p }))) as SettingValue<D>
   }
+  if (isTableSetting(decl)) return readTable(decl, raw) as SettingValue<D>
   return (typeof raw === 'number' && Number.isFinite(raw) ? raw : decl.default) as SettingValue<D>
 }
 

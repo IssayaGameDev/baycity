@@ -36,6 +36,11 @@ interface SpecBase {
   readonly label?: string
   /** Hide this parameter unless another one says otherwise. */
   readonly when?: ParamWhen
+  /**
+   * Never in the Inspector: a value another component sets as the level loads (`drives`, ADR 0222) — Keyboard's
+   * World sets its Obstacles' Wins and Level so. Stored, read and driven as any other.
+   */
+  readonly hidden?: true
 }
 
 export interface NumberSpec extends SpecBase {
@@ -318,9 +323,25 @@ const checkOne = (spec: ParamSpec, value: unknown, at: string): void => {
  * is worth putting in front of somebody. A `when` naming a parameter that does not exist shows the field,
  * which is the safe direction: a typo in a declaration should not make a control vanish silently.
  */
+/**
+ * Every reference a declaration's parameters hold — what a re-id has to follow (ADR 0097, ADR 0177): `key` for a
+ * `nodeRef` or `componentRef`, `key[].column` for one in a list's rows (ADR 0222). What `retargetParams` reads.
+ */
+export const refPathsOf = (decls: ParamDecls): string[] =>
+  Object.entries(decls).flatMap(([key, spec]) =>
+    spec.kind === 'nodeRef' || spec.kind === 'componentRef'
+      ? [key]
+      : spec.kind === 'list'
+        ? Object.entries(spec.item)
+            .filter(([, s]) => s.kind === 'nodeRef' || s.kind === 'componentRef')
+            .map(([column]) => `${key}[].${column}`)
+        : [],
+  )
+
 export const visibleParams = <D extends ParamDecls>(decls: D, values: RawParams): string[] =>
   Object.entries(decls)
     .filter(([, spec]) => {
+      if (spec.hidden === true) return false
       const when = spec.when
       if (when === undefined) return true
       if (!(when.param in decls)) return true

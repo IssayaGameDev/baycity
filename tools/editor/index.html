@@ -2836,6 +2836,20 @@
         width: 11px;
         height: 11px;
       }
+      /* Add as a drop target (ADR 0222): a Hierarchy row or a card dropped on it is a new row holding it. */
+      .lf-add.rf-ok {
+        border-color: var(--accent);
+        background: #1a2638;
+        color: var(--text);
+      }
+      .lf-add.rf-no {
+        border-color: #6b3a3a;
+        color: #d98c8c;
+      }
+      .lf-add.rf-no::after {
+        content: attr(data-why);
+        margin-left: 4px;
+      }
       .lf-empty,
       .lf-none {
         color: var(--dim);

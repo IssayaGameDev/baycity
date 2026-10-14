@@ -19,7 +19,7 @@ import {
 } from './sequence'
 import { SEQUENCE, sequenceOf } from './sequenceData'
 import { textOf, type TextDesc } from './text'
-import { drivenComponents, drivesOf } from './drives'
+import { drivenComponents, settleDrives } from './drives'
 import { refPathOf } from './refPath'
 import {
   COLLIDER,
@@ -815,7 +815,7 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
    * driven values, and a driven text is drawn with them. Its colliders and visuals were built from its own: a drive
    * is for what is read, not for what is built.
    */
-  for (const [target, drives] of drivesOf(allNodes, (n) => n.components, findNode, types)) {
+  for (const [target, drives] of settleDrives(allNodes, (n) => n.components, findNode, types)) {
     const components = drivenComponents(target.components, drives)
     ;(target as { components: readonly ComponentData[] }).components = components
     const text = textByNode.get(target)

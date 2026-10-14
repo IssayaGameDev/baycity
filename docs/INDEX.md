@@ -272,5 +272,6 @@ why matters.
 | [0219](adr/0219-a-reference-can-point-into-a-placement.md) | A reference can point into a placement |
 | [0220](adr/0220-a-reference-follows-a-move.md) | A reference follows a move, and an added child lives in its placement |
 | [0221](adr/0221-rebirth.md) | Rebirth |
+| [0222](adr/0222-the-world-component.md) | The World component: a level's balance in one place |
 
 `Design archive/` holds superseded design material and is not maintained.

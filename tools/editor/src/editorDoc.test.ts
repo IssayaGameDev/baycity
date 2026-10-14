@@ -798,6 +798,29 @@ describe('node references (stage C4)', () => {
       expect(target(), 'out again: plainly').toBe(xId)
     })
 
+    /** A list's reference column (ADR 0222), as Keyboard's World lists its Obstacles: it follows as any reference. */
+    it('follows a duplicated placement in a list’s rows too', () => {
+      const Lister = defineComponent({ type: 'Lister', params: { rows: { kind: 'list', item: { at: { kind: 'componentRef', of: COLLIDER } }, default: [] } } })
+      const level = blank()
+      const doc = levelDoc(level, createRegistry([...ENGINE_COMPONENTS, ...SHARED_COMPONENTS, Lister]))
+      const root = placeRef(doc, vec3(0, 0, 0))
+      const holder = doc.placeModel('m', vec3(0, 0, 9))
+      doc.setName(holder, 'holder')
+      const lister = doc.placeModel('m', vec3(5, 0, 0))
+      doc.setName(lister, 'lister')
+      doc.addComponent(lister, Lister.type)
+      const piece = pieceOf(doc, root)
+      const col = doc.components(piece).find((c) => c.type === COLLIDER)!.id
+      doc.setParams(named(doc, 'lister'), idOf(doc, named(doc, 'lister'), Lister.type), { rows: [{ at: { node: doc.refTo(named(doc, 'lister'), piece), component: col } }] })
+      doc.reparent(0, named(doc, 'holder'), 0)
+      doc.reparent(named(doc, 'lister'), named(doc, 'holder'), 1)
+      doc.duplicate(named(doc, 'holder'))
+      const [original, copy] = level.nodes
+      const rowsOf = (h: Node): unknown => h.children![1]!.components.find((c) => c.type === Lister.type)?.params.rows
+      expect(rowsOf(original!)).toEqual([{ at: { node: `${original!.children![0]!.id}/pad`, component: col } }])
+      expect(rowsOf(copy!), 'into the copy’s placement').toEqual([{ at: { node: `${copy!.children![0]!.id}/pad`, component: col } }])
+    })
+
     it('follows a duplicated placement duplicated with it', () => {
       const { level, doc } = pointedInto()
       const holder = doc.placeModel('m', vec3(0, 0, 9))

@@ -11,7 +11,7 @@ import { icon } from './icons'
  * rows are kept as they are now.
  *
  * A row's fields are the plain kinds — number, bool, string, colour (an optional one with an **auto** box) and
- * enum; anything else shows `—`.
+ * enum; any other kind is the host's to draw (`cellFor`, a reference column, ADR 0222), else `—`.
  */
 
 type Row = Readonly<Record<string, unknown>>
@@ -25,6 +25,13 @@ export interface ListFieldOptions {
   readonly write: (rows: Row[], ongoing?: boolean) => void
   /** A drag let go: end its undo entry, writing nothing. */
   readonly settle: () => void
+  /**
+   * A field of a kind this list does not draw — a reference (ADR 0222): the host's control for row `n`'s `value`,
+   * writing through `put`; `rows` is the list as it is. `null`, or absent, shows `—`.
+   */
+  readonly cellFor?: (n: number, key: string, spec: ParamSpec, value: unknown, put: (v: unknown) => void, rows: readonly Row[]) => HTMLElement | null
+  /** The **Add** button, handed to the host with a way to append a row over the defaults — a drop on it, for one. */
+  readonly onAddButton?: (add: HTMLElement, append: (row: Row) => void) => void
 }
 
 export interface ListField {
@@ -59,6 +66,7 @@ export const listField = (o: ListFieldOptions): ListField => {
   add.append(icon('plus'), el('span', undefined, 'Add'))
   add.addEventListener('click', () => commit([...held, { ...defaultsOf(o.item) }]))
   root.append(head, rows, add)
+  o.onAddButton?.(add, (row) => commit([...held, { ...defaultsOf(o.item), ...row }]))
 
   const commit = (next: Row[], ongoing = false): void => {
     held = next
@@ -101,7 +109,7 @@ export const listField = (o: ListFieldOptions): ListField => {
         return wrap
       }
       default:
-        return el('span', 'lf-none', '—')
+        return o.cellFor?.(n, key, spec, value, (v) => put(v), held) ?? el('span', 'lf-none', '—')
     }
   }
 

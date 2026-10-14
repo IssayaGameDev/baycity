@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { readSettings } from './settings'
+import { readSetting, readSettings, type TableSetting } from './settings'
 
 const DECLS = {
   perKey: { label: 'per step', default: 1 },
@@ -31,5 +31,23 @@ describe('readSettings', () => {
     expect(fallback).toEqual(DECLS.cost.default)
     fallback[0]!.y = 999
     expect(DECLS.cost.default[0]!.y, 'the default is copied, not handed out').toBe(100)
+  })
+})
+
+/** A table (ADR 0222): rows of numbers in named columns — Keyboard's step pads. */
+describe('a table setting', () => {
+  const PADS: TableSetting = {
+    kind: 'table',
+    label: 'Step pads',
+    columns: { perStep: { label: 'XP', default: 1 }, requiresWins: { label: 'Wins', default: 0 } },
+    default: [{ perStep: 1, requiresWins: 0 }, { perStep: 2, requiresWins: 3 }],
+  }
+  it('reads the file’s rows, a column it lacks or cannot use at its default, and the declared rows otherwise', () => {
+    expect(readSetting(PADS, [{ perStep: 5, requiresWins: 15 }, { perStep: 'x' }])).toEqual([{ perStep: 5, requiresWins: 15 }, { perStep: 1, requiresWins: 0 }])
+    expect(readSetting(PADS, 'nope')).toEqual(PADS.default)
+    expect(readSetting(PADS, [1, 2]), 'not rows').toEqual(PADS.default)
+    const copy = readSetting(PADS, undefined)
+    copy[0]!.perStep = 999
+    expect(PADS.default[0]!.perStep, 'the default is copied').toBe(1)
   })
 })

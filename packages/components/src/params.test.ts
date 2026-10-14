@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ComponentError, defaultsOf, readParams, visibleParams, type ParamDecls } from './params'
+import { ComponentError, defaultsOf, readParams, refPathsOf, visibleParams, type ParamDecls } from './params'
 import { Bumper } from './shared/bumper'
 import { Sequence } from './shared/sequence'
 import { Collider } from './engine/collider'
@@ -190,5 +190,22 @@ describe('a colour parameter', () => {
 
   it('falls back to its default when absent', () => {
     expect(readParams(decls, {}, 'at').tint).toBe('#ffffff')
+  })
+})
+
+/** Kodjo's World (ADR 0222): a field another component sets is hidden where it is set; a list may hold references. */
+describe('hidden fields and references in rows', () => {
+  const DECLS = {
+    wins: { kind: 'number', default: 1, hidden: true },
+    label: { kind: 'string', default: '' },
+    target: { kind: 'nodeRef' },
+    stages: { kind: 'list', item: { obstacle: { kind: 'componentRef', of: 'Obstacle' }, wins: { kind: 'number', default: 1 } }, default: [] },
+  } as const satisfies ParamDecls
+  it('keeps a hidden field out of what the Inspector shows, and still reads it', () => {
+    expect(visibleParams(DECLS, {})).toEqual(['label', 'target', 'stages'])
+    expect(readParams(DECLS, { wins: 7 }, 'x').wins).toBe(7)
+  })
+  it('names every reference a re-id has to follow, a list’s by its column', () => {
+    expect(refPathsOf(DECLS)).toEqual(['target', 'stages[].obstacle'])
   })
 })

@@ -58,4 +58,4 @@ the tick after ([obstacles.md](obstacles.md)).
 Kodjo's trampoline (Bumper prefab); kill plane. The whole run fits the wire's `QUANT_BOUND` of ±1000 m
 (ADR 0092); it did not at ±40, and peers past the last two boards were clamped.
 
-`WinsPad.stage` (number, default 0 = unnumbered): the pad's place in the world's sequence, 1-based — what the simulator and a future HUD read (ADR 0088). Wins per stage for World 1: [world-1.md](world-1.md).
+A stage's number and Wins are its row in the level's World ([world.md](world.md), ADR 0222); `WinsPad.stage` is gone. Wins per stage for World 1: [world-1.md](world-1.md).

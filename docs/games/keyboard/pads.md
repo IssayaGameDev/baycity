@@ -9,8 +9,12 @@ Sets what a step pays. The real game's row of numbered buttons at spawn.
 
 | Param | Kind | Default | Meaning |
 | --- | --- | --- | --- |
-| `perStep` | number | 1 | what each step pays while this pad is active |
-| `requiresWins` | number | 0 | Wins needed to take it |
+| `perStep` | number, **hidden** | 1 | what each step pays while this pad is active |
+| `requiresWins` | number, **hidden** | 0 | Wins needed to take it |
+
+Both are set by the level's World from the game's **pad table** (`PAD_SETTINGS.pads`, `padTable.ts`, a game setting): a
+pad's place in the World's `pads` list is its tier, that row of the table its values ([world.md](world.md), ADR 0222). A
+pad no World lists keeps its own.
 | `activeMaterial` | asset:material | `''` | worn while its value is the one you are on; empty keeps the Renderer's |
 | `idleMaterial` | asset:material | `''` | worn otherwise; empty keeps the Renderer's |
 
@@ -22,7 +26,7 @@ Materials: `stylePads()` in `main.ts` runs when `perStep` changes and swaps each
 (`client.meshesOf(node)`) to `client.material(id)`; the original material is remembered per mesh for the empty
 case. Any material a component parameter names is preloaded with the level (`assetParamIds`, ADR 0082).
 
-The shipped eight (children of `step-pads`, x −12, two rows of four, 3 m apart): 1/0, 2/3, 5/15, 25/100,
+The table's default rows are the shipped eight (children of `step-pads`, x −12, two rows of four, 3 m apart): 1/0, 2/3, 5/15, 25/100,
 50/500, 100/2.5K, 250/15K, 500/50K; active = goal yellow `6bbc0130aff311b5`, idle = checkpoint green
 `d67ddcac4f57efc8`.
 

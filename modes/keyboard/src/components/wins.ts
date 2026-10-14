@@ -19,9 +19,8 @@ export const WinsPad = defineComponent({
   type: 'WinsPad',
   label: 'Wins pad',
   params: {
+    /** What a touch pays — unless an Obstacle points at the pad: then its stage's, from the level's `World` (ADR 0222). */
     wins: { kind: 'number', default: 1, min: 1, step: 1, label: 'wins' },
-    /** Its place in the world's sequence, 1-based; 0 = unnumbered. What the simulator and a HUD read (ADR 0088). */
-    stage: { kind: 'number', default: 0, min: 0, step: 1, label: 'stage' },
   },
   singleton: true,
   onContact: (_self, ctx, hit) => ctx.effects.progress(hit.node),

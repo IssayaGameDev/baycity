@@ -16,8 +16,9 @@ Declared in `progression.ts` (`CURVE_SETTINGS`); the curve math is `@mp/mode`'s 
 it. Constants that are not balance: `METRES_PER_STUD = 0.28`, `BASE_PER_STEP = 1`. Per step:
 `1 × stepPad × treadmill × world × rebirth × trail × aura × item` ([world-1.md](world-1.md)).
 
-Pad tiers and Wins payouts are node parameters, not settings: `StepPad` ([pads.md](pads.md)), `WinsPad` with its
-`stage` number ([stages-and-wins.md](stages-and-wins.md)).
+The **pad table** is a game setting too (`PAD_SETTINGS.pads`, a table: XP per step and Wins needed a tier, ADR 0222). A
+world's own numbers — its base XP per step, speed multiplier, Level to enter, and its stages (Level, Wins, run time,
+floor, falls) — are its level's `World` component ([world.md](world.md)). The simulator does not read them yet.
 
 ## The curve editor (`tools/editor/src/curveEditor.ts`)
 

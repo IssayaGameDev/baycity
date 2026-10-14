@@ -12,6 +12,7 @@ import { DEFAULT_KEYCAP_LOOK, DEFAULT_PRESS, drawKeycaps, type KeycapLook, type 
 import { createPopups, DEFAULT_POPUP, type PopupFeel } from './popups'
 import { abbreviate, experienceForLevel, levelAt, maxSpeedAt, METRES_PER_STUD, rebirthMultiplierAt, shortAmount, type ProgressCurve } from './progression'
 import { createRebirthWindow, rebirthView, type RebirthWindow } from './rebirthWindow'
+import { NO_WORLD, stageOrderOf, worldOf, type WorldValues } from './components/world'
 import { keyboardSession, GAME_CURVE, GAME_KEYS, spawnOf, STAND_OFFSET, type KeyboardSession, type KeyboardTeleport } from './rules'
 import { createTeleportWindow, teleportRows, type TeleportWindow } from './teleportWindow'
 import { checkpointsOf, shownText, TEXT_FADE_SECONDS, type CheckpointStop } from './components/obstacle'
@@ -90,6 +91,8 @@ const NO_STATES: ReadonlySet<string> = new Set()
 /** The stepper's report for the tick in progress, held until the tick's contacts have said whether we are on a treadmill. */
 let stepsThisTick = 0
 
+/** The level being played's World's numbers (ADR 0222): World 1's until a level with a `World` loads. */
+let world: WorldValues = NO_WORLD
 /** The level being played's checkpoints and spawn, for the teleport window (ADR 0203); read as each level loads. */
 let checkpoints: readonly CheckpointStop[] = []
 let start: Vec3 = vec3(0, 3, 0)
@@ -179,7 +182,9 @@ const client = await startTpsClient({
    * editor calls them with no callback and still teleports — and the client hears about the payout here.
    */
   session: (loaded, opts) => {
-    checkpoints = checkpointsOf(loaded, STAND_OFFSET)
+    // The level's World (ADR 0222): its stages' order, and what its steps and speed are worth.
+    world = worldOf(loaded)?.values ?? NO_WORLD
+    checkpoints = checkpointsOf(loaded, STAND_OFFSET, stageOrderOf(loaded))
     start = spawnOf(loaded)
     textShown.clear()
     session = keyboardSession(loaded, {
@@ -428,8 +433,9 @@ client.onFrame((dt) => {
   // Every tick before this frame is complete, contacts included, so the last report is settled and on the ground.
   groundSteps += stepsThisTick
   stepsThisTick = 0
-  // Every step's worth times the rebirths' multiplier (ADR 0221): `1 × stepPad × treadmill × rebirth` so far.
-  const reborn = rebirthMultiplierAt(rebirths, curve)
+  // Every step's worth times the world's base and the rebirths' multiplier: `stepPad × world × treadmill × rebirth`
+  // (ADR 0221, ADR 0222).
+  const reborn = rebirthMultiplierAt(rebirths, curve) * world.baseXp
   groundSteps = payOut(groundSteps, perStep * reborn)
   if (treadmillOn !== null) treadmillSteps = payOut(treadmillSteps, treadmillStepValue(perStep, treadmillOn) * reborn)
   // The tick already put us back at the spawn; the payout is what is left to show. Popped from the pad we left.
@@ -447,7 +453,7 @@ client.onFrame((dt) => {
   const at = levelAt(experience, curve)
   // The speed you run at: Max Speed for your Level, or the debug pick, which cannot exceed it (as the real
   // game's picker cannot). In studs/s for the HUD, in m/s for the controller.
-  const maxStuds = maxSpeedAt(at.level, curve)
+  const maxStuds = maxSpeedAt(at.level, curve) * world.speedMultiplier
   const speedStuds = speedPick.enabled ? Math.min(speedPick.studs, maxStuds) : maxStuds
   hud.set(experience, at.level, at.into, at.next, speedStuds)
   hud.setWins(wins)

@@ -18,7 +18,7 @@ import {
   type AssetDatabase, type AssetKind, type AssetOp, type DataAsset, type MaterialAsset, type Transform } from '@mp/content'
 
 import { DEFAULT_REGISTRY, createRegistry, dataMenuPath, ENGINE_COMPONENTS, isSharedComponent, newDataAsset, PLAYER_COMPONENTS, SHARED_COMPONENT_TYPES, sharedComponents, type DataTypeDef, type Registry } from '@mp/components'
-import { type CurvePoint, type ModeDescriptor, readSettings } from '@mp/mode'
+import { type ModeDescriptor, readSettings } from '@mp/mode'
 import { eulerToQuat, vec3, type Vec3 } from '@mp/core'
 import { createPhysicsWorld, initPhysics, type PhysicsWorld } from '@mp/physics'
 import {
@@ -69,7 +69,7 @@ import type { EditorContext } from './assistant/assistantApi'
 import { createFollow } from './follow'
 import { createPeople, type PeopleState } from './people'
 import { createFieldPresence, type Ring } from './fieldPresence'
-import { createGamesWindow, type GamesWindow } from './gamesWindow'
+import { createGamesWindow, type GamesWindow, type SettingShown } from './gamesWindow'
 import { componentUse, removalRefusal } from './componentUse'
 import { assetRefusal } from './assetRefusal'
 import { createFileActions } from './fileActions'
@@ -290,7 +290,7 @@ const removeShared = async (game: string, type: string): Promise<void> => {
  * A game setting changed (ADR 0162): an edit to the game's live data file, shown at once and sent behind, and an
  * entry in the one undo history. `ongoing` while a number is dragged, so the drag is one entry.
  */
-const changeGameSetting = (game: string, key: string, value: number | CurvePoint[], ongoing: boolean): void => {
+const changeGameSetting = (game: string, key: string, value: SettingShown, ongoing: boolean): void => {
   const mode = MODES[game]
   const have = gameData[game]
   if (mode === undefined || have === undefined) return

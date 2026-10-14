@@ -6,6 +6,7 @@ import { MARKER_COLORS } from '@mp/render-three'
 import { KEYBOARD_REGISTRY, keyboardSession, spawnOf } from './rules'
 import { KEY_SETTINGS, keyboardGridOf } from './keycaps'
 import { CURVE_SETTINGS } from './progression'
+import { PAD_SETTINGS } from './padTable'
 import { StepPad } from './components/stepPad'
 import { Treadmill } from './components/treadmill'
 import { WinsPad } from './components/wins'
@@ -75,7 +76,7 @@ export const KEYBOARD_MODE: ModeDescriptor = {
    */
   surfaceGrid: keyboardGridOf,
   // The progression curves and the key geometry, in one Game row (ADR 0087, ADR 0115).
-  settings: { ...CURVE_SETTINGS, ...KEY_SETTINGS },
+  settings: { ...CURVE_SETTINGS, ...PAD_SETTINGS, ...KEY_SETTINGS },
   spawn: spawnOf,
   session: keyboardSession,
 }

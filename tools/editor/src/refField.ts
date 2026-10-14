@@ -71,10 +71,37 @@ export interface RefTarget {
 
 const targets = new WeakMap<HTMLElement, RefTarget>()
 
-/** The reference field under a point, for a drag that is not the browser's (the Hierarchy's). */
+/** The reference field under a point, for a drag that is not the browser's (the Hierarchy's) — or another drop target. */
 export const refFieldAt = (x: number, y: number): RefTarget | null => {
-  const hit = document.elementFromPoint(x, y)?.closest<HTMLElement>('.rf')
+  const hit = document.elementFromPoint(x, y)?.closest<HTMLElement>('.rf, .rf-drop')
   return hit === null || hit === undefined ? null : (targets.get(hit) ?? null)
+}
+
+/**
+ * Any element as a drop target for what a reference field takes — a Hierarchy row, an Inspector card: a list's
+ * **Add**, which takes one as a new row (ADR 0222). Lit `rf-ok` while a drag that may land is over it, `rf-no` with why.
+ */
+export const refDropTarget = (root: HTMLElement, o: { readonly refuse: (drag: RefDrag) => string | null; readonly take: (drag: RefDrag) => void }): void => {
+  root.classList.add('rf-drop')
+  const clear = (): void => {
+    root.classList.remove('rf-ok', 'rf-no')
+    root.removeAttribute('data-why')
+  }
+  targets.set(root, {
+    offer: (drag) => {
+      const why = o.refuse(drag)
+      root.classList.toggle('rf-ok', why === null)
+      root.classList.toggle('rf-no', why !== null)
+      if (why === null) root.removeAttribute('data-why')
+      else root.setAttribute('data-why', why)
+      return why === null
+    },
+    leave: clear,
+    take: (drag) => {
+      clear()
+      o.take(drag)
+    },
+  })
 }
 
 /** The target a field element answers to, for tests and for a caller holding the element. */

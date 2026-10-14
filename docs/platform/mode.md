@@ -102,14 +102,16 @@ level in the game's own page (ADR 0172).
 
 ## Settings (ADR 0087)
 
-`ModeDescriptor.settings?: SettingDecls` — `Record<key, NumberSetting | CurveSetting>`:
+`ModeDescriptor.settings?: SettingDecls` — `Record<key, NumberSetting | CurveSetting | TableSetting>`:
 
 ```ts
 NumberSetting { kind?: 'number'; label; default: number; min?; max?; step?; hint? }
 CurveSetting  { kind: 'curve'; label; hint?; xLabel; yLabel; interpolation: 'linear' | 'ratio'; beyond: 'hold' | 'extend'; logY?; yMin?; default: CurvePoint[] }
-readSettings(decls, raw): SettingValues   // a file's `settings` block over the defaults; wrong shape → default
+TableSetting  { kind: 'table'; label; hint?; columns: { [column]: { label; default; min?; max?; step? } }; default: rows }   // ADR 0222
+readSettings(decls, raw): SettingValues   // a file's `settings` block over the defaults; wrong shape → default; a table's
+                                          // rows each column a finite number or its default, else the declared rows
 sampleCurve(points, x, { interpolation, beyond })   // before the first point: its y; between: linear or constant ratio; after: hold or extend
 normalizePoints(raw): CurvePoint[] | null  // sorted, deduped, finite
 ```
 
-Stored in `content/<game>/game.json` → `settings`; edited in the editor's games window, Settings (a graph per curve, `editor.md`, ADR 0162). Keyboard: `CURVE_SETTINGS`, three curves (`docs/games/keyboard/balance.md`, ADR 0087/0088).
+Stored in `content/<game>/game.json` → `settings`; edited in the editor's games window, Settings (a graph per curve, `editor.md`, ADR 0162). Keyboard: `CURVE_SETTINGS`, five curves, and `PAD_SETTINGS`, the step-pad table (`docs/games/keyboard/balance.md`, ADR 0087/0088, ADR 0222).

@@ -38,6 +38,26 @@ export const drivesOf = <N>(
 }
 
 /**
+ * `drivesOf`, followed down a chain (ADR 0222): a driven component's own drives read what it was driven to — Keyboard's
+ * World sets an Obstacle's Wins, which the Obstacle sets on its pad. Each pass reads every node's components with the
+ * last pass's drives over them, so a chain of `passes` links settles; drives are recomputed, never stacked.
+ */
+export const settleDrives = <N>(
+  nodes: readonly N[],
+  componentsOf: (n: N) => readonly ComponentData[],
+  find: (from: N, id: string) => N | undefined,
+  types: TypeInfo,
+  passes = 4,
+): Map<N, Drive[]> => {
+  let map = drivesOf(nodes, componentsOf, find, types)
+  for (let k = 1; k < passes; k++) {
+    const last = map
+    map = drivesOf(nodes, (n) => drivenComponents(componentsOf(n), last.get(n) ?? []), find, types)
+  }
+  return map
+}
+
+/**
  * `components` with each drive's parameters over its target's own: the enabled component of the drive's type with
  * the reference's id, or the first of the type for `''`. A target that is not there is skipped. A new array and new
  * component objects: a node's components may be shared with every other placement of its prefab.

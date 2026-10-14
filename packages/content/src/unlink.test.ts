@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { retargetRef, unlinkPrefab, type UnlinkDeps } from './prefabs'
+import { retargetParams, retargetRef, unlinkPrefab, type UnlinkDeps } from './prefabs'
 import type { ComponentData, Level, Node } from './types'
 
 /**
@@ -247,5 +247,29 @@ describe('a reference into an unlinked placement', () => {
     expect(retargetRef('p/x', to)).toBe('q/x')
     expect(retargetRef({ node: 'p/x', component: 'c' }, to)).toEqual({ node: 'q/x', component: 'c' })
     expect(retargetRef('r/x', to)).toBe('r/x')
+  })
+})
+
+/** A reference in a list's rows (ADR 0222) — Keyboard's World listing its Obstacles — follows as any other. */
+describe('a reference in a list’s rows', () => {
+  it('is re-pointed by its path, a row copied where it changes', () => {
+    const rows = [{ obstacle: { node: 'p/lamp', component: 'c1' }, wins: 3 }, { obstacle: null, wins: 1 }]
+    const params: Record<string, unknown> = { stages: rows, target: 'p/lamp' }
+    const changed = retargetParams(params, ['stages[].obstacle', 'target'], (id) => (id === 'p/lamp' ? 'lamp2' : undefined))
+    expect(changed.sort()).toEqual(['stages', 'target'])
+    expect(params.stages).toEqual([{ obstacle: { node: 'lamp2', component: 'c1' }, wins: 3 }, { obstacle: null, wins: 1 }])
+    expect(rows[0]!.obstacle!.node, 'the row was copied, not written over').toBe('p/lamp')
+    expect(retargetParams(params, ['stages[].obstacle'], () => undefined), 'nothing to move').toEqual([])
+  })
+
+  it('follows an unlinked placement', () => {
+    const level = levelWith([
+      { id: 'a', transform: at(0), components: [], prefab: 'P' },
+      { id: 'w', transform: at(5), components: [comp('wc', 'World', { stages: [{ obstacle: { node: 'a/lamp', component: 'c1' } }] })] },
+    ])
+    const d = deps()
+    unlinkPrefab(level, 'P', { ...d, refKeysOf: (type) => (type === 'World' ? ['stages[].obstacle'] : d.refKeysOf(type)) })
+    const lamp = level.nodes[0]!.children!.find((k) => k.components.some((c) => c.type === 'Renderer'))!
+    expect(level.nodes[1]!.components[0]!.params.stages).toEqual([{ obstacle: { node: lamp.id, component: 'c1' } }])
   })
 })

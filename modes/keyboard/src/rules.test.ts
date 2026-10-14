@@ -1,4 +1,4 @@
-import { characterAccess, createComponentRuntime, Hazard } from '@mp/components'
+import { characterAccess, componentOn, createComponentRuntime, Hazard } from '@mp/components'
 import { instantiateLevel, TEXT, type ComponentData, type Level, type LoadedLevel, type Node, type WorldNode } from '@mp/content'
 import { vec3 } from '@mp/core'
 import { createPhysicsWorld, initPhysics } from '@mp/physics'
@@ -9,6 +9,7 @@ import type { Teleport } from '@mp/mode'
 
 import { KEYBOARD_REGISTRY, STAND_OFFSET, keyboardSession, type KeyboardTeleport } from './rules'
 import { checkpointsOf, Obstacle, requiresLevelText, shownText } from './components/obstacle'
+import { stageOrderOf, World, worldOf } from './components/world'
 import { qualifies, StepPad } from './components/stepPad'
 import { stepsThisTick } from './components/steps'
 import { DEFAULT_CURVE, stepsPerMinute } from './progression'
@@ -438,5 +439,69 @@ describe('step pads (ADR 0082)', () => {
     const offers: { perStep: number; requiresWins: number }[] = []
     keyboardSession(loaded, { onStepPad: (o) => offers.push(o) }).effects.progress(nodeById(loaded, 'sp'))
     expect(offers).toEqual([{ perStep: 1, requiresWins: 0 }])
+  })
+})
+
+/**
+ * The World (ADR 0222, Kodjo's design): one component on the level, the central place for its numbers — its stages in
+ * order, each with its Obstacle and what it pays and asks; its step pads in order, each tier's values from the game's
+ * pad table. Set on the Obstacles and pads as the level loads.
+ */
+describe('the World (ADR 0222)', () => {
+  beforeAll(async () => {
+    await initPhysics()
+  })
+
+  /** An InterLevel: an Obstacle on its root, its Wins pad and its sign inside. */
+  const room: Node = {
+    id: 'root',
+    transform: { position: vec3(0, 0, 0) },
+    components: [comp('ob', Obstacle.type, { winsPad: { node: 'win', component: 'win-w' }, requiredLevelText: { node: 'sign', component: 'sign-t' } })],
+    children: [
+      { id: 'win', transform: { position: vec3(0, 0, 4) }, components: [comp('win-c', 'Collider', box()), comp('win-w', WinsPad.type, { wins: 1 })] },
+      { id: 'sign', transform: { position: vec3(0, 3, 0) }, components: [comp('sign-t', TEXT, { text: '' })] },
+    ],
+  }
+  const placed = (id: string, x: number): Node => ({ id, transform: { position: vec3(x, 0, 0) }, components: [], prefab: 'room' }) as Node
+  const row = (obstacle: string | null, level: number, wins: number) => ({ obstacle: obstacle === null ? null : { node: obstacle, component: 'ob' }, level, wins, gateSeconds: 45, floorSeconds: 5, falls: 0 })
+  const world = (stages: unknown[], pads: unknown[] = []): Node => ({ id: 'world', transform: { position: vec3(0, 0, 0) }, components: [comp('w', World.type, { stages, pads })] })
+  const stepPad = (id: string, x: number): Node => pad(id, x, comp(`${id}-s`, StepPad.type, { perStep: 99, requiresWins: 99 }))
+  const loadWith = (nodes: Node[]): LoadedLevel =>
+    instantiateLevel(createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } }), { ...levelOf(nodes), prefabs: { room } }, KEYBOARD_REGISTRY)
+  const inside = (loaded: LoadedLevel, placement: string, id: string): WorldNode =>
+    loaded.allNodes.find((n) => n.id === id && loaded.findNode(loaded.allNodes.find((p) => p.id === placement)!, `${placement}/${id}`) === n)!
+
+  it('orders the stages by its rows, and leaves an Obstacle it does not list out', () => {
+    const loaded = loadWith([spawnAt(0), placed('a', 10), placed('b', 20), placed('c', 30), world([row('b', 3, 7), row('a', 5, 9)])])
+    const stops = checkpointsOf(loaded, STAND_OFFSET, stageOrderOf(loaded))
+    expect(stops.map((s) => [s.number, s.node.id, s.position.x]), 'c is in no row: no checkpoint').toEqual([
+      [1, 'b', 20],
+      [2, 'a', 10],
+    ])
+  })
+
+  it('sets each stage’s Wins on its Obstacle’s pad, and its Level on its sign', () => {
+    const loaded = loadWith([spawnAt(0), placed('a', 10), placed('b', 20), world([row('b', 3, 7), row('a', 5, 9)])])
+    const winsOf = (placement: string): unknown => componentOn(inside(loaded, placement, 'win').components, WinsPad)?.wins
+    expect([winsOf('b'), winsOf('a')]).toEqual([7, 9])
+    expect(loaded.texts.map((t) => t.text).sort()).toEqual([requiresLevelText(3), requiresLevelText(5)])
+  })
+
+  it('gives each listed step pad its tier’s values from the game’s pad table, by its place', () => {
+    const loaded = loadWith([spawnAt(0), stepPad('p1', 5), stepPad('p2', 6), stepPad('lone', 7), world([], [{ pad: { node: 'p2', component: 'p2-s' } }, { pad: { node: 'p1', component: 'p1-s' } }])])
+    const offer = (id: string) => {
+      const s = componentOn(nodeById(loaded, id).components, StepPad)!
+      return [s.perStep, s.requiresWins]
+    }
+    expect(offer('p2'), 'tier 1').toEqual([1, 0])
+    expect(offer('p1'), 'tier 2').toEqual([2, 3])
+    expect(offer('lone'), 'not listed: its own').toEqual([99, 99])
+  })
+
+  it('keeps the Hierarchy’s order until it lists an Obstacle, and reads World 1’s numbers without one', () => {
+    const loaded = loadWith([spawnAt(0), placed('a', 10), placed('b', 20), world(World.params.stages.default as unknown[])])
+    expect(stageOrderOf(loaded), 'the design rows point at nothing yet').toBeNull()
+    expect(worldOf(loaded)?.values).toEqual({ baseXp: 1, speedMultiplier: 1, levelToEnter: 0 })
+    expect(worldOf(load([spawnAt(0)]))).toBeNull()
   })
 })

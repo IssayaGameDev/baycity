@@ -1,10 +1,12 @@
-import { isCurveSetting, type CurvePoint, type SettingDecls } from '@mp/mode'
+import type { ParamDecls } from '@mp/components'
+import { isCurveSetting, isTableSetting, type CurvePoint, type SettingDecls, type TableRows } from '@mp/mode'
 
 import { gameRows } from './assetTree'
 import { fieldRow, numberScrub, scrubFieldOf } from './controls'
 import { createCurveEditor, type CurveEditor } from './curveEditor'
 import { icon } from './icons'
 import { initials } from './people'
+import { listField } from './listField'
 
 /**
  * The games window (Track B, ADR 0162): every game, and the one picked's levels, settings and components, in a window
@@ -49,13 +51,16 @@ export interface GamesWindowHost {
   /** Move a level to another game: the host confirms, and refuses what `moveRefusal` does. */
   onMoveLevel: (qualified: string, game: string) => void
   /** A game's declared settings (ADR 0087/0088) and their values now, or `null` when this build has no code for it. */
-  settings: (game: string) => { decls: SettingDecls; values: Readonly<Record<string, number | CurvePoint[]>> } | null
+  settings: (game: string) => { decls: SettingDecls; values: Readonly<Record<string, SettingShown>> } | null
   /** A setting was changed; `ongoing` while a number is still being dragged, so the drag is one undo entry. */
-  onSettingChanged: (game: string, key: string, value: number | CurvePoint[], ongoing: boolean) => void
+  onSettingChanged: (game: string, key: string, value: SettingShown, ongoing: boolean) => void
   /** The editor's one history (ADR 0159). */
   undo: () => void
   redo: () => void
 }
+
+/** A setting's value as the window shows and writes it: a number, a curve's points, a table's rows (ADR 0222). */
+export type SettingShown = number | CurvePoint[] | TableRows
 
 export interface GamesWindow {
   open: () => void
@@ -83,7 +88,7 @@ export const createGamesWindow = (host: GamesWindowHost): GamesWindow => {
   /** The level being dragged onto a game, if one is (ADR 0162). */
   let dragging: string | null = null
   /** The Settings tab's fields by key, to show a value from elsewhere in place, and its graphs, to let go of. */
-  let settingFields = new Map<string, (v: number | CurvePoint[]) => void>()
+  let settingFields = new Map<string, (v: SettingShown) => void>()
   let curves: CurveEditor[] = []
 
   const scrim = el('div', 'gw-scrim')
@@ -199,14 +204,40 @@ export const createGamesWindow = (host: GamesWindowHost): GamesWindow => {
         // Opened large, the graph goes over the window, inside it, so its keys are the window's too.
         const graph = createCurveEditor(holder, {
           decl,
-          points: Array.isArray(v) ? v : decl.default,
+          points: Array.isArray(v) ? (v as CurvePoint[]) : decl.default,
           size: { w: 600, h: 220 },
           overlayParent: scrim,
           onChange: (points) => host.onSettingChanged(game, key, points, false),
         })
         curves.push(graph)
         settingFields.set(key, (next) => {
-          if (Array.isArray(next)) graph.set(next)
+          if (Array.isArray(next)) graph.set(next as CurvePoint[])
+        })
+        if (decl.hint !== undefined) page.append(el('div', 'gw-note', decl.hint))
+        continue
+      }
+      if (isTableSetting(decl)) {
+        // A table (ADR 0222): the list field, a column a number; a row's drag writes when it lets go.
+        page.append(el('div', 'gw-section', decl.label))
+        const item: ParamDecls = Object.fromEntries(
+          Object.entries(decl.columns).map(([column, c]) => [
+            column,
+            { kind: 'number', label: c.label, default: c.default, ...(c.min === undefined ? {} : { min: c.min }), ...(c.max === undefined ? {} : { max: c.max }), ...(c.step === undefined ? {} : { step: c.step }) },
+          ]),
+        )
+        const rowsOf = (x: unknown): TableRows => (Array.isArray(x) && x.every((r) => typeof r === 'object' && r !== null) ? (x as TableRows) : decl.default.map((r) => ({ ...r })))
+        const table = listField({
+          item,
+          value: rowsOf(v),
+          title: decl.label,
+          write: (rows, ongoing) => {
+            if (ongoing !== true) host.onSettingChanged(game, key, rows as TableRows, false)
+          },
+          settle: () => undefined,
+        })
+        page.append(table.root)
+        settingFields.set(key, (next) => {
+          if (Array.isArray(next)) table.set(rowsOf(next))
         })
         if (decl.hint !== undefined) page.append(el('div', 'gw-note', decl.hint))
         continue

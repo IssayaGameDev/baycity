@@ -16,6 +16,7 @@ Run: `pnpm dev:keyboard` (port 5177) with `pnpm dev:server`. Share: `pnpm share 
 | [stages-and-wins.md](stages-and-wins.md) | `WinsPad`, the teleport, Wins |
 | [obstacles.md](obstacles.md) | `Obstacle` and the teleport window: the checkpoints, reaching them, their order |
 | [rebirth.md](rebirth.md) | Rebirth: its two curves, what it resets, the window |
+| [world.md](world.md) | The `World` component: a level's stages and step pads in order, its base XP and speed, the pad table |
 | [pads.md](pads.md) | `StepPad` and `Treadmill`: params, materials, signs |
 | [hud.md](hud.md) | What is drawn where, and how it scales |
 | [debug.md](debug.md) | The debug pane's folders and controls |
@@ -24,10 +25,10 @@ Run: `pnpm dev:keyboard` (port 5177) with `pnpm dev:server`. Share: `pnpm share 
 Source map (`modes/keyboard/src/`): `editorMode.ts` (the `ModeDescriptor`), `rules.ts` (registry + session),
 `main.ts` (the composition: `startTpsClient`, earning, pads, signs, HUD, pane), `progression.ts`, `save.ts` (the save's adapter), `balance.ts` + `balance.cli.ts`,
 `keycaps.ts` + `keycapGeometry.ts` + `keyColours.ts`, `hud.ts`, `popups.ts`, `sideButtons.ts`, `teleportWindow.ts`, `rebirthWindow.ts`; the game's components, one per file (ADR 0174), in `components/`:
-`keyboard.ts`, `wins.ts`, `treadmill.ts`, `stepPad.ts`, `steps.ts`, `obstacle.ts`; its data types in `data/`: `keyboardStyle.ts` (Keyboard Style,
+`keyboard.ts`, `wins.ts`, `treadmill.ts`, `stepPad.ts`, `steps.ts`, `obstacle.ts`, `world.ts`; its data types in `data/`: `keyboardStyle.ts` (Keyboard Style,
 New data › Keyboard › Keyboard Style — key colours and shade jitter, ADR 0181/0182).
 Level: `content/keyboard/levels/keyboard.level.json`. Shared components: `content/keyboard/game.json`.
 
 Decisions: ADR 0069 (keyboard is one node), 0071 (Experience/Level/Speed), 0072 (`toScreen`, popups),
 0073 (stages, Wins), 0080 (treadmill), 0081 (a step), 0082 (world text, step pads), 0087 (settings), 0088 (curves, gate simulator), 0075 (debug folders),
-0078/0079 (movement and animation caps this game sets), 0202 (stage gates), 0203 (the teleport window), 0211 (the Obstacle; its platform side 0210), 0217 (StageGate and Checkpoint gone), 0221 (rebirth).
+0078/0079 (movement and animation caps this game sets), 0202 (stage gates), 0203 (the teleport window), 0211 (the Obstacle; its platform side 0210), 0217 (StageGate and Checkpoint gone), 0221 (rebirth), 0222 (the World).

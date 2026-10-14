@@ -28,6 +28,10 @@ export const gameOfDocId = (id: string): string | null => (id.startsWith('game:'
 const isPoint = (p: unknown): boolean =>
   typeof p === 'object' && p !== null && typeof (p as { x?: unknown }).x === 'number' && typeof (p as { y?: unknown }).y === 'number'
 
+/** A table setting's row (ADR 0222): an object of finite numbers. */
+const isNumberRow = (r: unknown): boolean =>
+  typeof r === 'object' && r !== null && !Array.isArray(r) && Object.values(r).every((n) => typeof n === 'number' && Number.isFinite(n))
+
 /** The kinds edited live, each with what a file of it must look like. */
 const VALIDATORS: Partial<Record<LiveKind, (json: unknown) => string | null>> = {
   material: (json) => {
@@ -45,7 +49,7 @@ const VALIDATORS: Partial<Record<LiveKind, (json: unknown) => string | null>> = 
    * known — the editor, before it sends — and the server, which has no game's code, keeps to the shape.
    */
   data: (json) => (isDataAsset(json) ? null : 'a data asset names its type and holds its fields as an object'),
-  /** Its shared components (ADR 0077), and its settings: a number or curve points each (ADR 0087/0088). */
+  /** Its shared components (ADR 0077), and its settings: a number, curve points or a table's rows each (ADR 0087/0088, ADR 0222). */
   game: (json) => {
     if (typeof json !== 'object' || json === null || Array.isArray(json)) return 'a game file is an object'
     const g = json as Record<string, unknown>
@@ -54,7 +58,7 @@ const VALIDATORS: Partial<Record<LiveKind, (json: unknown) => string | null>> = 
     if (typeof g.settings !== 'object' || g.settings === null || Array.isArray(g.settings)) return 'a game file has its settings as an object'
     for (const [key, v] of Object.entries(g.settings as Record<string, unknown>)) {
       const number = typeof v === 'number' && Number.isFinite(v)
-      if (!number && !(Array.isArray(v) && v.every(isPoint))) return `setting ${key} is not a number or curve points`
+      if (!number && !(Array.isArray(v) && (v.every(isPoint) || v.every(isNumberRow)))) return `setting ${key} is not a number, curve points or table rows`
     }
     return null
   },

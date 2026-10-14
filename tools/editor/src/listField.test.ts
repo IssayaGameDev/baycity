@@ -60,3 +60,44 @@ describe('a list field', () => {
     expect(rows()).toHaveLength(2)
   })
 })
+
+/** A column the list does not draw is the host's (ADR 0222): a reference, written back through the list. */
+describe('a list field’s host-drawn column', () => {
+  const REFS = { obstacle: { kind: 'componentRef', of: 'Obstacle', label: 'obstacle' }, wins: { kind: 'number', default: 1, label: 'wins' } } as const
+  it('asks the host for the cell, and writes what it puts', () => {
+    document.body.replaceChildren()
+    const written: Record<string, unknown>[][] = []
+    const asked: number[] = []
+    let put: ((v: unknown) => void) | null = null
+    const field = listField({
+      item: REFS,
+      value: [{ obstacle: null, wins: 2 }],
+      title: 'stages',
+      write: (rows) => void written.push(rows),
+      settle: () => {},
+      cellFor: (n, key, spec, _value, write) => {
+        if (spec.kind !== 'componentRef') return null
+        asked.push(n)
+        put = write
+        const cell = document.createElement('span')
+        cell.className = 'host-cell'
+        cell.dataset.key = key
+        return cell
+      },
+    })
+    document.body.append(field.root)
+    expect(field.root.querySelectorAll('.host-cell')).toHaveLength(1)
+    expect(asked).toEqual([0])
+    put!({ node: 'n', component: 'c' })
+    expect(written.at(-1)).toEqual([{ obstacle: { node: 'n', component: 'c' }, wins: 2 }])
+  })
+
+  it('hands the host its Add, to append a row over the defaults', () => {
+    document.body.replaceChildren()
+    const written: Record<string, unknown>[][] = []
+    let append: ((row: Record<string, unknown>) => void) | null = null
+    listField({ item: REFS, value: [], title: 'stages', write: (rows) => void written.push(rows), settle: () => {}, onAddButton: (_add, a) => (append = a) })
+    append!({ obstacle: { node: 'n', component: 'c' } })
+    expect(written.at(-1)).toEqual([{ obstacle: { node: 'n', component: 'c' }, wins: 1 }])
+  })
+})

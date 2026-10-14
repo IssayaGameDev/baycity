@@ -18,6 +18,8 @@ export const TEXT_FADE_SECONDS = 0.3
  * - `trigger` — a trigger collider. Walking into it reaches the checkpoint, for good. Empty: never reached.
  * - `winsPad`, `wins` — what that pad pays, over its own `wins`.
  * - `requiredLevelText`, `requiredLevel` — that Text reads "Requires Level X". The level gates nothing yet.
+ * - `wins` and `requiredLevel` are the level's `World`'s to set, by the stage row naming this Obstacle (ADR 0222), and
+ *   hidden here.
  * - `safeZoneText` — a Text of its own words, shown while this is the obstacle ahead (ADR 0213).
  *
  * In the game both texts start hidden, and only the obstacle ahead of the player shows one (`shownText`).
@@ -33,9 +35,10 @@ export const Obstacle = defineComponent({
     teleport: { kind: 'nodeRef', label: 'teleport to' },
     trigger: { kind: 'componentRef', of: Collider.type, contacts: true, label: 'reached by' },
     winsPad: { kind: 'componentRef', of: WinsPad.type, label: 'wins pad' },
-    wins: { kind: 'number', default: 1, min: 1, step: 1, label: 'wins' },
+    // Set by the level's `World` (ADR 0222), and edited there: hidden here.
+    wins: { kind: 'number', default: 1, min: 1, step: 1, label: 'wins', hidden: true },
     requiredLevelText: { kind: 'componentRef', of: TEXT, label: 'required level text' },
-    requiredLevel: { kind: 'number', default: 0, min: 0, step: 1, label: 'requires level' },
+    requiredLevel: { kind: 'number', default: 0, min: 0, step: 1, label: 'requires level', hidden: true },
     safeZoneText: { kind: 'componentRef', of: TEXT, label: 'safe zone text' },
   },
   singleton: true,
@@ -69,13 +72,14 @@ export interface CheckpointStop {
 }
 
 /**
- * Every checkpoint in the level, in Hierarchy order — depth first, parents before children, the order the loader
- * walks (`allNodes`), so one inside a prefab placement is numbered where the placement sits.
+ * Every checkpoint in the level, in `order` — the level's `World`'s stage rows (`stageOrderOf`, ADR 0222), so an Obstacle
+ * it does not list is no checkpoint — or, without one, in Hierarchy order: depth first, parents before children, the
+ * order the loader walks (`allNodes`), so one inside a prefab placement is numbered where the placement sits.
  */
-export const checkpointsOf = (loaded: Pick<LoadedLevel, 'allNodes' | 'findNode'>, standOffset: number): CheckpointStop[] => {
+export const checkpointsOf = (loaded: Pick<LoadedLevel, 'allNodes' | 'findNode'>, standOffset: number, order: readonly WorldNode[] | null = null): CheckpointStop[] => {
   const seen = new Map<string, number>()
   const out: CheckpointStop[] = []
-  for (const node of loaded.allNodes) {
+  for (const node of order ?? loaded.allNodes) {
     const obstacle = componentOn(node.components, Obstacle)
     if (obstacle === undefined) continue
     const landing = obstacle.teleport === null ? undefined : loaded.findNode(node, obstacle.teleport)

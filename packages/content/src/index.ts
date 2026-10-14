@@ -32,7 +32,7 @@ export {
   walkNodes,
 } from './nodes'
 export type { Drive, Resolved, TypeInfo } from './nodes'
-export { drivenComponents, drivesOf } from './drives'
+export { drivenComponents, drivesOf, settleDrives } from './drives'
 export { LevelError, validateLevel, validateNodeTree, validateConfig, checkTransform, checkComponents, checkOverrides } from './validate'
 export type { ParamChecker, TreeContext } from './validate'
 export { applyOp, applyBatch, invertOp, touchedRefs, refKey, isInherited, OpError } from './ops'
@@ -72,7 +72,7 @@ export type {
   StepKind,
   Timing,
 } from './sequence'
-export { hydratePrefabs, relinkPrefabs, stripHydrated, prefabRefsIn, retargetInto, retargetRef, unlinked, unlinkPrefab, unlinkedNode, type Unlinked, type UnlinkDeps } from './prefabs'
+export { hydratePrefabs, relinkPrefabs, stripHydrated, prefabRefsIn, retargetInto, retargetParams, retargetRef, unlinked, unlinkPrefab, unlinkedNode, type Unlinked, type UnlinkDeps } from './prefabs'
 export { REF_PATH_SEPARATOR, refInto, refPathOf } from './refPath'
 export { OVERRIDE_FIELDS, OVERRIDE_FIELD_NAMES, addedIdsOf, childListsOf, forEachNode, idsUnder, overrideFieldEmpty, overrideFieldsSet } from './tree'
 export type { OverrideField } from './tree'

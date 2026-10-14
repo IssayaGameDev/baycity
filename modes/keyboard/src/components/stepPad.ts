@@ -16,8 +16,9 @@ export const StepPad = defineComponent({
   type: 'StepPad',
   label: 'Step pad',
   params: {
-    perStep: { kind: 'number', default: 1, min: 1, step: 1, label: 'per step' },
-    requiresWins: { kind: 'number', default: 0, min: 0, step: 1, label: 'requires wins' },
+    // Set by the level's `World` from the game's pad table, by this pad's place in its list (ADR 0222): hidden here.
+    perStep: { kind: 'number', default: 1, min: 1, step: 1, label: 'per step', hidden: true },
+    requiresWins: { kind: 'number', default: 0, min: 0, step: 1, label: 'requires wins', hidden: true },
     /** Worn while this pad's value is the one you are on. Empty leaves the pad's own material. */
     activeMaterial: { kind: 'asset', of: 'material', default: '', label: 'active material' },
     /** Worn otherwise. Empty leaves the pad's own material. */

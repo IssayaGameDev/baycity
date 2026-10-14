@@ -77,22 +77,30 @@ export const loadLevel = async (name: string, registryFor?: (mode: string) => Re
 /** The level as it is on disk, unvalidated — for the caller that has to look at it before choosing a registry. */
 export const loadLevelRaw = async (name: string): Promise<unknown> => (await req('levels', `/${name}`)).json()
 
-/** A game's data file: its shared-component list (ADR 0077) and its settings (ADR 0087/0088: numbers or curve points). */
+/** A game's data file: its shared-component list (ADR 0077) and its settings (ADR 0087/0088, ADR 0222: numbers, curve points, table rows). */
 export interface GameData {
   components: string[]
-  settings: Record<string, number | CurvePoint[]>
+  settings: Record<string, number | CurvePoint[] | Record<string, number>[]>
 }
+
+/** A table's rows (ADR 0222): a list of objects whose every value is a finite number. */
+const tableRows = (v: unknown): Record<string, number>[] | null =>
+  Array.isArray(v) && v.every((r) => typeof r === 'object' && r !== null && !Array.isArray(r) && Object.values(r).every((n) => typeof n === 'number' && Number.isFinite(n)))
+    ? (v as Record<string, number>[])
+    : null
 
 /** A game's data file as the editor keeps it: what is not a component name or a setting of either shape is dropped. */
 export const parseGameData = (json: unknown): GameData => {
   const raw = (typeof json === 'object' && json !== null ? json : {}) as { components?: unknown; settings?: unknown }
-  const settings: Record<string, number | CurvePoint[]> = {}
+  const settings: GameData['settings'] = {}
   if (typeof raw.settings === 'object' && raw.settings !== null) {
     for (const [k, v] of Object.entries(raw.settings as Record<string, unknown>)) {
       if (typeof v === 'number' && Number.isFinite(v)) settings[k] = v
       else {
         const pts = normalizePoints(v)
+        const rows = pts === null ? tableRows(v) : null
         if (pts !== null) settings[k] = pts
+        else if (rows !== null) settings[k] = rows
       }
     }
   }

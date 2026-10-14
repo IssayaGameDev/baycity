@@ -1,6 +1,6 @@
 import { vec3, type Vec3 } from '@mp/core'
 import { COLLIDER, LIGHT, MATERIAL_OVERRIDE, RENDERER, SEQUENCE, SPAWN, compileSequence, readStages, refPathOf, sequenceOf, unitColliderFor, type ColliderDesc } from '@mp/content'
-import { sharedComponents, visibleParams, type AssetSpec, type ParamSpec } from '@mp/components'
+import { sharedComponents, visibleParams, type AssetSpec, type ComponentRefSpec, type ParamSpec } from '@mp/components'
 import { QUANT_BOUND } from '@mp/net'
 import { DEFAULT_POSTFX, DEFAULT_SKY_PARAMS } from '@mp/render-three'
 
@@ -29,7 +29,7 @@ import {
 } from './controls'
 import { cardJustDragged, pressCardToDrag } from './cardDrag'
 import { icon, type IconName } from './icons'
-import { refField, refFieldAt, type RefShown } from './refField'
+import { refDropTarget, refField, refFieldAt, type RefDrag, type RefShown } from './refField'
 import { folderTree, treePicker, type TreeItem } from './treePicker'
 import { listField } from './listField'
 import { byMenuFolder, menuFolderOf } from './componentMenu'
@@ -861,6 +861,113 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
       return placement === null ? doc.label(j) : `${doc.label(placement)} › ${doc.label(j)}`
     }
 
+    /**
+     * A component field (ADR 0177): Unity's field typed by a component. It shows `Zone (Collider)` — the ordinal too
+     * where the object has several — and takes an Inspector card of its type by the header, or a Hierarchy row, whose
+     * first component of the type it takes, as Unity's does. The reach is an object field's. One control for a
+     * parameter and for a list's reference column (ADR 0222): `current` is what it holds, `store` writes a value, and
+     * `twin` names an earlier row holding the same reference, shown as a warning.
+     */
+    const componentRefControl = (
+      spec: ComponentRefSpec,
+      title: string,
+      current: () => unknown,
+      store: (v: { node: string; component: string } | null) => void,
+      twin?: () => number | null,
+    ): { root: HTMLElement; show: (v: unknown) => void; refuse: (drag: RefDrag) => string | null; valueFor: (drag: RefDrag) => { node: string; component: string } | null } => {
+      const typeLabel = doc.registry.get(spec.of)?.label ?? spec.of
+      const glyph = componentIcon(spec.of)
+      const ofType = (j: number): ComponentView[] => doc.components(j).filter((c) => c.type === spec.of)
+      /** A component's name in the field: its object's, and the ordinal where the object has more than one. */
+      const named = (j: number, id: string, node?: string): string => {
+        const all = ofType(j)
+        const n = all.findIndex((c) => c.id === id)
+        return `${node === undefined ? doc.label(j) : refLabel(node, j)} (${typeLabel}${all.length > 1 ? ` ${n + 1}` : ''})`
+      }
+      /** Where it points: the node's index and the component, the old shape — a bare node id — read as its first. */
+      const resolve = (v: unknown): { j: number; id: string; node: string } | null | 'missing' => {
+        const ref: unknown = typeof v === 'string' ? { node: v, component: '' } : v
+        if (typeof ref !== 'object' || ref === null) return null
+        const { node, component } = ref as { node?: unknown; component?: unknown }
+        if (typeof node !== 'string' || typeof component !== 'string') return null
+        const j = doc.refTarget(at, node)
+        const c = j === null ? undefined : component === '' ? ofType(j)[0] : ofType(j).find((x) => x.id === component)
+        return j === null || c === undefined ? 'missing' : { j, id: c.id, node }
+      }
+      const shownFor = (v: unknown): RefShown => {
+        const r = resolve(v)
+        if (r === null) return null
+        if (r === 'missing') return { label: `missing ${typeLabel}`, icon: 'warn', missing: true }
+        const also = twin?.() ?? null
+        return also === null ? { label: named(r.j, r.id, r.node), icon: glyph } : { label: `${named(r.j, r.id, r.node)} · also row ${also + 1}`, icon: 'warn', missing: true }
+      }
+      // Written, then shown as written, as an object field's is.
+      const put = (v: { node: string; component: string } | null): void => {
+        store(v)
+        field.set(shownFor(current()))
+      }
+      /**
+       * The picker's tree (ADR 0178): the Hierarchy's, keyed `<index>/<component id>`. An object in reach with one
+       * of the type is itself the row to pick; one with several lists them under it, before its children.
+       */
+      const tree = (): TreeItem[] =>
+        hierarchyTree(doc, (j) => {
+          const found = doc.refTo(at, j) === null ? [] : ofType(j)
+          const only = found.length === 1 ? found[0] : undefined
+          const row: TreeItem =
+            only !== undefined
+              ? { key: `${j}/${only.id}`, label: named(j, only.id), icon: glyph, pickable: true }
+              : { key: `node:${j}`, label: doc.label(j), icon: doc.refOf(j) === null ? 'object' : 'prefab', pickable: false }
+          return found.length > 1 ? { row, extra: found.map((c) => ({ key: `${j}/${c.id}`, label: named(j, c.id), icon: glyph, pickable: true })) } : { row }
+        })
+      const refuse = (drag: RefDrag): string | null => {
+        if (drag.kind === 'asset') return `this takes a ${typeLabel}, not an asset`
+        if (drag.kind === 'component') {
+          const c = doc.components(drag.index).find((x) => x.id === drag.component)
+          if (c !== undefined && c.type !== spec.of) return `this takes a ${typeLabel}, not a ${doc.registry.get(c.type)?.label ?? c.type}`
+        } else if (ofType(drag.index).length === 0) return `${doc.label(drag.index)} has no ${typeLabel}`
+        return doc.refTo(at, drag.index) === null ? UNREACHABLE : null
+      }
+      /** What a drag `refuse` let through stores: a row gives its first of the type, as Unity's does; a card, itself. */
+      const valueFor = (drag: RefDrag): { node: string; component: string } | null => {
+        if (drag.kind === 'asset') return null
+        const node = doc.refTo(at, drag.index)
+        const component = drag.kind === 'component' ? drag.component : ofType(drag.index)[0]?.id
+        return node === null || component === undefined ? null : { node, component }
+      }
+      const field = refField({
+        shown: shownFor(current()),
+        none: `None (${typeLabel})`,
+        title,
+        choices: tree,
+        current: () => {
+          const r = resolve(current())
+          return r === null || r === 'missing' ? null : `${r.j}/${r.id}`
+        },
+        pick: (v) => {
+          if (v === null) return put(null)
+          const cut = v.indexOf('/')
+          const node = doc.refTo(at, Number(v.slice(0, cut)))
+          if (node !== null) put({ node, component: v.slice(cut + 1) })
+        },
+        ping: () => {
+          const r = resolve(current())
+          if (r !== null && r !== 'missing') host.pingNode(r.j)
+        },
+        open: () => {
+          const r = resolve(current())
+          if (r !== null && r !== 'missing') host.selectNode(r.j)
+        },
+        refuse,
+        take: (drag) => {
+          const v = valueFor(drag)
+          if (v !== null) put(v)
+        },
+        draggedAssets: host.draggedAssets,
+      })
+      return { root: field.root, show: (v) => field.set(shownFor(v)), refuse, valueFor }
+    }
+
     switch (spec.kind) {
       case 'number': {
         const v = state[key]
@@ -1127,103 +1234,21 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
         return
       }
       case 'componentRef': {
-        /**
-         * A component field (ADR 0177): Unity's field typed by a component. It shows `Zone (Collider)` — the ordinal
-         * too where the object has several — and takes an Inspector card of its type by the header, or a Hierarchy
-         * row, whose first component of the type it takes, as Unity's does. The reach is an object field's.
-         */
+        // A component field (ADR 0177); its control is shared with a list's reference column (ADR 0222).
         if (mixed) return differs()
-        const typeLabel = doc.registry.get(spec.of)?.label ?? spec.of
-        const glyph = componentIcon(spec.of)
-        const ofType = (j: number): ComponentView[] => doc.components(j).filter((c) => c.type === spec.of)
-        /** A component's name in the field: its object's, and the ordinal where the object has more than one. */
-        const named = (j: number, id: string, node?: string): string => {
-          const all = ofType(j)
-          const n = all.findIndex((c) => c.id === id)
-          return `${node === undefined ? doc.label(j) : refLabel(node, j)} (${typeLabel}${all.length > 1 ? ` ${n + 1}` : ''})`
-        }
-        /** Where it points: the node's index and the component, the old shape — a bare node id — read as its first. */
-        const resolve = (v: unknown): { j: number; id: string; node: string } | null | 'missing' => {
-          const ref: unknown = typeof v === 'string' ? { node: v, component: '' } : v
-          if (typeof ref !== 'object' || ref === null) return null
-          const { node, component } = ref as { node?: unknown; component?: unknown }
-          if (typeof node !== 'string' || typeof component !== 'string') return null
-          const j = doc.refTarget(at, node)
-          const c = j === null ? undefined : component === '' ? ofType(j)[0] : ofType(j).find((x) => x.id === component)
-          return j === null || c === undefined ? 'missing' : { j, id: c.id, node }
-        }
-        const shownFor = (v: unknown): RefShown => {
-          const r = resolve(v)
-          if (r === null) return null
-          return r === 'missing' ? { label: `missing ${typeLabel}`, icon: 'warn', missing: true } : { label: named(r.j, r.id, r.node), icon: glyph }
-        }
-        // Written, then shown as written, as an object field's is.
-        const store = (v: { node: string; component: string } | null): void => {
-          write({ [key]: v })
-          field.set(shownFor(now()))
-        }
-        /**
-         * The picker's tree (ADR 0178): the Hierarchy's, keyed `<index>/<component id>`. An object in reach with one
-         * of the type is itself the row to pick; one with several lists them under it, before its children.
-         */
-        const tree = (): TreeItem[] =>
-          hierarchyTree(doc, (j) => {
-            const found = doc.refTo(at, j) === null ? [] : ofType(j)
-            const only = found.length === 1 ? found[0] : undefined
-            const row: TreeItem =
-              only !== undefined
-                ? { key: `${j}/${only.id}`, label: named(j, only.id), icon: glyph, pickable: true }
-                : { key: `node:${j}`, label: doc.label(j), icon: doc.refOf(j) === null ? 'object' : 'prefab', pickable: false }
-            return found.length > 1 ? { row, extra: found.map((c) => ({ key: `${j}/${c.id}`, label: named(j, c.id), icon: glyph, pickable: true })) } : { row }
-          })
-        const field = refField({
-          shown: shownFor(state[key]),
-          none: `None (${typeLabel})`,
-          title: label,
-          choices: tree,
-          current: () => {
-            const r = resolve(now())
-            return r === null || r === 'missing' ? null : `${r.j}/${r.id}`
-          },
-          pick: (v) => {
-            if (v === null) return store(null)
-            const cut = v.indexOf('/')
-            const node = doc.refTo(at, Number(v.slice(0, cut)))
-            if (node !== null) store({ node, component: v.slice(cut + 1) })
-          },
-          ping: () => {
-            const r = resolve(now())
-            if (r !== null && r !== 'missing') host.pingNode(r.j)
-          },
-          open: () => {
-            const r = resolve(now())
-            if (r !== null && r !== 'missing') host.selectNode(r.j)
-          },
-          refuse: (drag) => {
-            if (drag.kind === 'asset') return `this takes a ${typeLabel}, not an asset`
-            if (drag.kind === 'component') {
-              const c = doc.components(drag.index).find((x) => x.id === drag.component)
-              if (c !== undefined && c.type !== spec.of) return `this takes a ${typeLabel}, not a ${doc.registry.get(c.type)?.label ?? c.type}`
-            } else if (ofType(drag.index).length === 0) return `${doc.label(drag.index)} has no ${typeLabel}`
-            return doc.refTo(at, drag.index) === null ? UNREACHABLE : null
-          },
-          take: (drag) => {
-            if (drag.kind === 'asset') return
-            const node = doc.refTo(at, drag.index)
-            // A row gives its first of the type, as Unity's does; a card, itself.
-            const component = drag.kind === 'component' ? drag.component : ofType(drag.index)[0]?.id
-            if (node !== null && component !== undefined) store({ node, component })
-          },
-          draggedAssets: host.draggedAssets,
-        })
-        line(field.root)
-        follow((v) => field.set(shownFor(v)))
+        const control = componentRefControl(spec, label, now, (v) => write({ [key]: v }))
+        line(control.root)
+        follow((v) => control.show(v))
         return
       }
       case 'list': {
         // Rows (ADR 0182): every edit is the whole list; a row's number or colour writes when it lets go.
         if (mixed) return differs()
         const rowsOf = (v: unknown): Record<string, unknown>[] => (Array.isArray(v) ? (v as Record<string, unknown>[]) : [])
+        // A reference column (ADR 0222): a component field per row, warning on a row holding what an earlier one does.
+        const same = (a: unknown, b: unknown): boolean =>
+          typeof a === 'object' && a !== null && typeof b === 'object' && b !== null && (a as { node?: unknown }).node === (b as { node?: unknown }).node && (a as { component?: unknown }).component === (b as { component?: unknown }).component
+        const refColumn = Object.entries(spec.item).find(([, s]) => s.kind === 'componentRef') as [string, ComponentRefSpec] | undefined
         const field = listField({
           item: spec.item,
           value: rowsOf(state[key]),
@@ -1232,6 +1257,29 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
             if (ongoing !== true) write({ [key]: rows })
           },
           settle: () => undefined,
+          cellFor: (n, column, cellSpec, value, put, rows) => {
+            if (cellSpec.kind !== 'componentRef') return null
+            const twin = (): number | null => {
+              const k = rows.findIndex((r, i) => i < n && value !== null && same(r[column], value))
+              return k < 0 ? null : k
+            }
+            return componentRefControl(cellSpec, cellSpec.label ?? column, () => value, put, twin).root
+          },
+          // A Hierarchy row or a card dropped on **Add** is a new row holding it (ADR 0222).
+          ...(refColumn === undefined
+            ? {}
+            : {
+                onAddButton: (add: HTMLElement, append: (row: Record<string, unknown>) => void) => {
+                  const control = componentRefControl(refColumn[1], refColumn[1].label ?? refColumn[0], () => null, () => undefined)
+                  refDropTarget(add, {
+                    refuse: control.refuse,
+                    take: (drag) => {
+                      const v = control.valueFor(drag)
+                      if (v !== null) append({ [refColumn[0]]: v })
+                    },
+                  })
+                },
+              }),
         })
         line(field.root)
         follow((v) => field.set(rowsOf(v)))

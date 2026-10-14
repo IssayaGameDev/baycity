@@ -117,8 +117,9 @@ export interface UnlinkDeps {
   /** A node id nothing in this level uses. Inherited children enter the level's id space and must not collide. */
   readonly freshId: () => string
   /**
-   * Every `nodeRef` and `componentRef` parameter a component type declares, so a reference between two inherited
-   * nodes follows them when they are re-idded (`retargetRef`).
+   * Every `nodeRef` and `componentRef` a component type declares, as paths (`refPathsOf`: `key`, or `key[].column` in a
+   * list's rows, ADR 0222), so a reference between two inherited nodes follows them when they are re-idded
+   * (`retargetParams`).
    *
    * Injected because only a component registry knows, and this package has none — which is also why the
    * editor-server cannot do this and the editor must (ADR 0097).
@@ -145,6 +146,45 @@ export const retargetRef = (value: unknown, to: (id: string) => string | undefin
   const node = (value as { node?: unknown }).node
   const moved = typeof node === 'string' ? map(node) : undefined
   return moved === undefined ? value : { ...value, node: moved }
+}
+
+/**
+ * The references at `paths` in `params` (`refPathsOf`: `key`, or `key[].column` in a list's rows, ADR 0222) re-pointed
+ * by `to`, in place, a list's rows copied where one changes. Returns the keys whose value changed.
+ */
+export const retargetParams = (params: Record<string, unknown>, paths: readonly string[], to: (id: string) => string | undefined): string[] => {
+  const changed = new Set<string>()
+  for (const path of paths) {
+    const cut = path.indexOf('[].')
+    if (cut < 0) {
+      if (!(path in params)) continue
+      const was = params[path]
+      const now = retargetRef(was, to)
+      if (now !== was) {
+        params[path] = now
+        changed.add(path)
+      }
+      continue
+    }
+    const key = path.slice(0, cut)
+    const column = path.slice(cut + 3)
+    const rows = params[key]
+    if (!Array.isArray(rows)) continue
+    let moved = false
+    const next = rows.map((r: unknown) => {
+      if (typeof r !== 'object' || r === null || !(column in r)) return r
+      const was = (r as Record<string, unknown>)[column]
+      const now = retargetRef(was, to)
+      if (now === was) return r
+      moved = true
+      return { ...(r as Record<string, unknown>), [column]: now }
+    })
+    if (moved) {
+      params[key] = next
+      changed.add(key)
+    }
+  }
+  return [...changed]
 }
 
 /**
@@ -228,9 +268,7 @@ const reidForest = (
   for (const root of roots) rename(root)
   /** One component's references, repointed in place: its reference parameters, and a sequence's step targets. */
   const repoint = (c: ComponentData): void => {
-    for (const key of deps.refKeysOf(c.type)) {
-      if (key in c.params) c.params[key] = retargetRef(c.params[key], (id) => map.get(id))
-    }
+    retargetParams(c.params, deps.refKeysOf(c.type), (id) => map.get(id))
     retargetSequenceParams(c, (id) => map.get(id))
   }
   const retarget = (x: Node): void => {
@@ -256,7 +294,7 @@ export const retargetInto = (
     return path === null ? undefined : into(path.placement)?.(path.node)
   }
   const repoint = (c: ComponentData): void => {
-    for (const key of refKeysOf(c.type)) if (key in c.params) c.params[key] = retargetRef(c.params[key], to)
+    retargetParams(c.params, refKeysOf(c.type), to)
   }
   forEachNode(level.nodes, (n) => {
     for (const c of n.components) repoint(c)
@@ -268,7 +306,7 @@ export const retargetInto = (
       for (const [cid, patch] of Object.entries(over.params ?? {})) {
         const type = pieces[0]?.components.find((c) => c.id === cid)?.type
         if (type === undefined) continue
-        for (const k of refKeysOf(type)) if (k in patch) patch[k] = retargetRef(patch[k], to)
+        retargetParams(patch, refKeysOf(type), to)
       }
     }
   })

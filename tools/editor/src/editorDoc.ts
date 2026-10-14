@@ -10,7 +10,7 @@ import {
   textOf,
   type TextDesc,
   drivenComponents,
-  drivesOf,
+  settleDrives,
   type Drive,
   COLLIDER,
   LIGHT,
@@ -29,7 +29,7 @@ import {
   diffStages,
   readStages,
   retargetSequenceOverride,
-  retargetRef,
+  retargetParams,
   retargetSequenceParams,
   type Stage,
   type SequenceAxes,
@@ -59,7 +59,7 @@ import {
   forEachNode,
   overrideFieldsSet,
 } from '@mp/content'
-import { DEFAULT_REGISTRY, type Registry } from '@mp/components'
+import { DEFAULT_REGISTRY, refPathsOf, type Registry } from '@mp/components'
 import type { LightDesc } from '@mp/render-three'
 import { eulerToQuat, mulQuat, quat, vec3, type Quat, type Vec3 } from '@mp/core'
 
@@ -836,7 +836,7 @@ const docOver = (
     const all = nodes()
     if (driven?.of !== all) {
       const indices = all.map((_, k) => k)
-      driven = { of: all, by: drivesOf(indices, (k) => all[k]!.view.components, (from, id) => refTargetIn(all, from, id) ?? undefined, registry) }
+      driven = { of: all, by: settleDrives(indices, (k) => all[k]!.view.components, (from, id) => refTargetIn(all, from, id) ?? undefined, registry) }
     }
     return driven.by.get(i) ?? []
   }
@@ -1103,10 +1103,10 @@ const docOver = (
     return undefined
   }
 
-  /** Every reference parameter a component declares: `nodeRef` and `componentRef` (ADR 0177). */
+  /** Every reference a component declares, as paths: a `nodeRef`, a `componentRef`, one in a list's rows (ADR 0177, ADR 0222). */
   const refKeys = (type: string): string[] => {
     const def = registry.get(type)
-    return def === undefined ? [] : Object.entries(def.params).filter(([, spec]) => spec.kind === 'nodeRef' || spec.kind === 'componentRef').map(([key]) => key)
+    return def === undefined ? [] : refPathsOf(def.params)
   }
 
   /**
@@ -1128,9 +1128,7 @@ const docOver = (
     rename(root)
 
     const retarget = (c: ComponentData): void => {
-      for (const key of refKeys(c.type)) {
-        if (key in c.params) c.params[key] = retargetRef(c.params[key], (id) => map.get(id))
-      }
+      retargetParams(c.params, refKeys(c.type), (id) => map.get(id))
       // A step's target names a child by id, the same as a `nodeRef` does (ADR 0137).
       retargetSequenceParams(c, (id) => map.get(id))
     }
@@ -1147,9 +1145,7 @@ const docOver = (
         for (const [cid, patch] of Object.entries(over.params ?? {})) {
           const type = inherited === undefined ? undefined : typeOfComponent(inherited, cid)
           if (type === undefined) continue
-          for (const key of refKeys(type)) {
-            if (key in patch) patch[key] = retargetRef(patch[key], (id) => map.get(id))
-          }
+          retargetParams(patch, refKeys(type), (id) => map.get(id))
         }
       }
       for (const kids of childListsOf(x)) for (const kid of kids) repoint(kid)
@@ -1166,12 +1162,11 @@ const docOver = (
     const ops: Op[] = []
     nodes().forEach((n, k) => {
       if (skip(k)) return
-      for (const c of n.view.components)
-        for (const key of refKeys(c.type)) {
-          const was = c.params[key]
-          const now = retargetRef(was, (id) => to(k, id))
-          if (now !== was) ops.push(...paramOpsFor(k, c.id, { [key]: now }))
-        }
+      for (const c of n.view.components) {
+        const next = { ...c.params }
+        const changed = retargetParams(next, refKeys(c.type), (id) => to(k, id))
+        if (changed.length > 0) ops.push(...paramOpsFor(k, c.id, Object.fromEntries(changed.map((key) => [key, next[key]]))))
+      }
     })
     return ops
   }

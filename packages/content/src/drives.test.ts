@@ -89,3 +89,35 @@ describe('drivenComponents', () => {
     expect(two[0]!.params.text, 'a new array, new objects: the original is untouched').toBe('one')
   })
 })
+
+/**
+ * A drive down a chain (ADR 0222): Keyboard's World sets an Obstacle's Wins, and the Obstacle sets them on its pad. A
+ * driven component's own drives read what it was driven to.
+ */
+describe('a chain of drives', () => {
+  beforeAll(async () => {
+    await initPhysics()
+  })
+  /** `Boss` sets a `Driver`'s `n`; the Driver sets it on its `Pad`. */
+  const CHAIN: TypeInfo = {
+    get: (type) =>
+      type === 'Boss'
+        ? { singleton: true, drives: (p): Drive[] => [{ ref: (p.driver ?? null) as Drive['ref'], type: 'Driver', params: { n: p.n } }] }
+        : TYPES.get(type),
+  }
+  it('settles two links deep, from what the first set', () => {
+    const level: Level = {
+      id: 'chain',
+      config: {},
+      nodes: [
+        { id: 'boss', transform: { position: vec3(0, 0, 0) }, components: [comp('b', 'Boss', { driver: { node: 'mid', component: 'd' }, n: 42 })] },
+        { id: 'mid', transform: { position: vec3(0, 0, 0) }, components: [comp('d', 'Driver', { pad: { node: 'pad', component: 'p' }, n: 1, words: 'w' })] },
+        { id: 'pad', transform: { position: vec3(0, 0, 0) }, components: [comp('p', 'Pad', { wins: 1 })] },
+      ],
+    }
+    const loaded = instantiateLevel(createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } }), level, CHAIN)
+    const pad = loaded.allNodes.find((n) => n.id === 'pad')!
+    expect(pad.components[0]!.params.wins, 'the Boss’s 42, through the Driver').toBe(42)
+    expect(loaded.allNodes.find((n) => n.id === 'mid')!.components[0]!.params.n).toBe(42)
+  })
+})
