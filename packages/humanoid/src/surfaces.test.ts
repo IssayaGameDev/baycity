@@ -148,7 +148,7 @@ describe('bounciness', () => {
         const falling = -c.vy
         stepCharacter(c, STILL, TICK_DT, DEFAULT_TUNING)
         world.step(TICK_DT)
-        if (!was && c.grounded && c.bounce === 0 && falling * 0.8 > 3) dead.push(`${h.toFixed(2)} m, tick ${i}, ${falling.toFixed(1)} m/s`)
+        if (!was && c.grounded && c.bounce.y === 0 && falling * 0.8 > 3) dead.push(`${h.toFixed(2)} m, tick ${i}, ${falling.toFixed(1)} m/s`)
       }
       world.free()
     }
@@ -168,5 +168,92 @@ describe('the ground probe', () => {
     expect(ground?.friction).toBeCloseTo(0.2, 6)
     expect(ground?.restitution).toBeCloseTo(0.6, 6)
     world.free()
+  })
+})
+
+/** Walls and ceilings (ADR 0232): what the player runs into bounces them and scrapes them as it would a loose body. */
+describe('walls and ceilings', () => {
+  /** A floor, and a wall facing −x at x = 3 — or a ceiling at y = 4 — made of `surface`. */
+  const room = (surface: { friction?: number; restitution?: number }, what: 'wall' | 'ceiling') => {
+    const world = floorWorld()
+    if (what === 'wall') world.addFixedBody({ position: vec3(3.5, 5, 0), shape: { kind: 'cuboid', halfExtents: vec3(0.5, 5, 20) }, ...surface })
+    else world.addFixedBody({ position: vec3(0, 4.5, 0), shape: { kind: 'cuboid', halfExtents: vec3(20, 0.5, 20) }, ...surface })
+    return world
+  }
+  /** Thrown at the wall high in the air at 8 m/s, nothing pressed: its speed across just after meeting it. */
+  const offTheWall = (surface: { restitution?: number }): number => {
+    const world = room(surface, 'wall')
+    const c = addCharacter(world, vec3(1, 9, 0))
+    c.vx = 8
+    // 1.6 m to the wall at 8 m/s: met at 0.2 s, still well above the floor at 0.3.
+    steps(world, c, STILL, ticks(0.3))
+    world.free()
+    return c.vx
+  }
+
+  it('bounces off a bouncy wall by its bounciness, and presses on into one nobody set', () => {
+    expect(offTheWall({ restitution: 0.8 })).toBeCloseTo(-6.4, 0)
+    expect(offTheWall({}), 'today: still heading into it').toBeGreaterThan(7)
+  })
+
+  it('holding into a bouncy wall, with full control: bounced off it, back at it, never through it', () => {
+    const world = room({ restitution: 0.9 }, 'wall')
+    const c = standing(world)
+    let furthest = -Infinity
+    let bounced = false
+    steps(world, c, FORWARD, ticks(3), () => {
+      furthest = Math.max(furthest, c.body.translation().x)
+      if (c.vx < -1) bounced = true
+    })
+    world.free()
+    expect(bounced).toBe(true)
+    expect(furthest, 'the wall’s face is at 3, the capsule 0.4 wide').toBeLessThan(2.62)
+  })
+
+  it('bounces off a bouncy ceiling, and stops under one nobody set', () => {
+    /** Launched at 20 m/s into a ceiling 1.9 m over its head, met at about 14: its vertical speed the first tick it is no longer rising. */
+    const under = (surface: { restitution?: number }): number => {
+      const world = room(surface, 'ceiling')
+      const c = standing(world)
+      c.launch = 20
+      steps(world, c, STILL, 1)
+      while (c.vy > 0) steps(world, c, STILL, 1)
+      world.free()
+      return c.vy
+    }
+    expect(under({ restitution: 0.8 }), 'thrown back down at 0.8 of it').toBeLessThan(-9)
+    expect(under({}), 'today: the rise just ends').toBeGreaterThan(-2)
+  })
+
+  it('slows a slide down a grippy wall it is pressed against, and not one nobody set', () => {
+    /** Falling high beside the wall, pushed into it at 6 m/s: its fall speed after 0.4 s. */
+    const fallAgainst = (surface: { friction?: number }): number => {
+      const world = room(surface, 'wall')
+      const c = addCharacter(world, vec3(2.5, 9.5, 0))
+      c.vx = 6
+      steps(world, c, STILL, ticks(0.4), () => void (c.vx = 6))
+      world.free()
+      return c.vy
+    }
+    const plain = fallAgainst({})
+    expect(fallAgainst({ friction: 0.5 }), 'as today').toBeCloseTo(plain, 6)
+    expect(fallAgainst({ friction: 1.5 }), 'grippy: falls slower').toBeGreaterThan(plain + 2)
+  })
+})
+
+describe('a bounce off a slope', () => {
+  it('throws the player downhill, off the floor’s angle', () => {
+    const world = floorWorld({ restitution: 0.8 }, 25)
+    const c = addCharacter(world, vec3(0, 3 + 0.1 + STAND, 0))
+    let landed = false
+    let across = 0
+    for (let i = 0; i < ticks(2) && !(landed && !c.grounded && across !== 0); i++) {
+      steps(world, c, STILL, 1)
+      if (c.grounded) landed = true
+      else if (landed) across = c.vx
+    }
+    world.free()
+    // Tilted +25° about z the floor faces −x: downhill is −x.
+    expect(across).toBeLessThan(-1)
   })
 })

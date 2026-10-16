@@ -40,7 +40,7 @@ type ShapeDesc =
 
 ### `BodyOptions`
 
-`{ position, shape, rotation?: Quat, restitution?, friction?, linearDamping?, layers?: CollisionLayers, sensor?: boolean }` — `friction` Rapier's, `DEFAULT_FRICTION` (0.5) when absent; `restitution` 0 when absent (ADR 0229)
+`{ position, shape, rotation?: Quat, restitution?, friction?, takesSurface?, linearDamping?, layers?: CollisionLayers, sensor?: boolean }` — `friction` Rapier's, `DEFAULT_FRICTION` (0.5) when absent; `restitution` 0 when absent (ADR 0229). `takesSurface` (ADR 0231): friction (1 unless given) combined by `Multiply`, restitution (0 unless given) by `Max` — what the body touches counts by its own numbers, where Rapier's default `Average` halved them; the death ragdoll's parts set it
 
 ### `PhysicsBody`
 
@@ -56,6 +56,7 @@ interface CharacterBody {
   move(desired: Vec3, snapAtLeast?: number): { grounded; applied: Vec3; ceiling }
   probeGround(extraReach?): GroundContact | undefined   // { colliderHandle, point, normal, friction, restitution } — the floor's surface (ADR 0229)
   collisions(): number[]                 // solids contacted during the last move
+  contacts(): CharacterContact[]         // the same, each { colliderHandle, normal (out of the surface), kind: 'floor'|'wall'|'ceiling', friction, restitution } (ADR 0232)
   overlaps(): number[]                   // sensors currently overlapped (ADR 0054)
   touching(): number[]                   // solids the touch skin overlaps (ADR 0188), below
   touchedBy(handle, from: { position; rotation }, motion): number | undefined   // ADR 0186, below

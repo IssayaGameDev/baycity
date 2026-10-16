@@ -53,6 +53,13 @@ export interface BodyOptions {
   readonly restitution?: number
   /** Grip: Rapier's friction coefficient, `DEFAULT_FRICTION` its default (ADR 0229). */
   readonly friction?: number
+  /**
+   * **A loose object takes the surface as it is** (ADR 0231): what it touches grips and bounces it by its own numbers,
+   * not mixed with this body's. Rapier mixes two by averaging unless one says otherwise, and the stronger rule wins: so
+   * this body's friction, 1 unless given, multiplies — a floor's 0 is 0, its 0.5 is 0.5 — and its bounciness, 0
+   * unless given, takes the larger — a floor's 0.8 is 0.8. Against another such body: friction 1, no bounce.
+   */
+  readonly takesSurface?: boolean
   /** Linear velocity damping — higher makes a pushed body settle sooner. */
   readonly linearDamping?: number
   readonly layers?: CollisionLayers
@@ -126,6 +133,17 @@ export interface CharacterOptions {
 }
 
 /** The surface a capsule is resting on, found by casting straight down from it. */
+/** One thing the capsule ran into during a move (ADR 0232). */
+export interface CharacterContact {
+  colliderHandle: number
+  /** Out of the surface, toward the capsule. */
+  normal: Vec3
+  /** By `normal`: floor as steep as the climb limit, ceiling facing down past `CEILING_NORMAL_MAX_Y`, else wall. */
+  kind: 'floor' | 'wall' | 'ceiling'
+  friction: number
+  restitution: number
+}
+
 export interface GroundContact {
   colliderHandle: number
   /** World-space point where the cast met the surface (under the capsule's centre). */
@@ -191,6 +209,12 @@ export interface CharacterBody {
    * ground, obstacles it pushed against). The basis for real contact-driven triggers —
    * match against `PhysicsBody.colliderHandle`. */
   collisions: () => number[]
+  /**
+   * The same contacts, each with what it is (ADR 0232): which way it faces — `normal` points out of the surface, toward
+   * the capsule — whether that makes it floor, wall or ceiling, and what it is made of. For the character to bounce off
+   * and scrape along what it runs into, as a loose body would.
+   */
+  contacts: () => readonly CharacterContact[]
   /**
    * Handles of the **sensors** the capsule is currently overlapping (ADR 0054) — trigger volumes, which by
    * definition do not resolve movement and so never appear in `collisions`.
@@ -366,10 +390,18 @@ const liveShapeFor = (shape: ShapeDesc): RAPIER.Shape => {
 /** Rapier packs interaction groups into one u32: memberships in the high half, filter in the low half. */
 const packLayers = (l: CollisionLayers): number => ((l.belongsTo & 0xffff) << 16) | (l.collidesWith & 0xffff)
 
-const makeCollider = (shape: ShapeDesc, restitution: number | undefined, friction: number | undefined, layers: CollisionLayers | undefined, sensor: boolean | undefined) => {
+const makeCollider = (
+  shape: ShapeDesc,
+  { restitution, friction, takesSurface, layers, sensor }: Pick<BodyOptions, 'restitution' | 'friction' | 'takesSurface' | 'layers' | 'sensor'>,
+) => {
   let cd = descFor(shape)
-  if (restitution !== undefined) cd = cd.setRestitution(restitution)
-  if (friction !== undefined) cd = cd.setFriction(friction)
+  if (takesSurface === true) {
+    cd = cd.setFriction(friction ?? 1).setFrictionCombineRule(RAPIER.CoefficientCombineRule.Multiply)
+    cd = cd.setRestitution(restitution ?? 0).setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Max)
+  } else {
+    if (restitution !== undefined) cd = cd.setRestitution(restitution)
+    if (friction !== undefined) cd = cd.setFriction(friction)
+  }
   if (layers !== undefined) cd = cd.setCollisionGroups(packLayers(layers))
   if (sensor === true) cd = cd.setSensor(true)
   return cd
@@ -408,7 +440,7 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
     if (o.rotation !== undefined) desc = desc.setRotation(o.rotation)
     if (o.linearDamping !== undefined) desc = desc.setLinearDamping(o.linearDamping)
     const body = world.createRigidBody(desc)
-    const collider = world.createCollider(makeCollider(o.shape, o.restitution, o.friction, o.layers, o.sensor), body)
+    const collider = world.createCollider(makeCollider(o.shape, o), body)
     queriesStale = true
     return {
       handle: body.handle,
@@ -471,7 +503,7 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
       RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(o.position.x, o.position.y, o.position.z),
     )
     const collider = world.createCollider(
-      makeCollider({ kind: 'capsule', halfHeight: o.halfHeight, radius: o.radius }, undefined, undefined, o.layers, undefined),
+      makeCollider({ kind: 'capsule', halfHeight: o.halfHeight, radius: o.radius }, o.layers === undefined ? {} : { layers: o.layers }),
       body,
     )
     // The controller's queries take their groups per call rather than reading the collider's, so the
@@ -488,13 +520,14 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
      * query and the controller already pass sensors by, so it blocks and holds up nothing.
      */
     const skin = world.createCollider(
-      makeCollider({ kind: 'capsule', halfHeight: o.halfHeight, radius: o.radius + TOUCH_SKIN }, undefined, undefined, o.layers, true).setActiveCollisionTypes(
+      makeCollider({ kind: 'capsule', halfHeight: o.halfHeight, radius: o.radius + TOUCH_SKIN }, { ...(o.layers === undefined ? {} : { layers: o.layers }), sensor: true }).setActiveCollisionTypes(
         RAPIER.ActiveCollisionTypes.DEFAULT | RAPIER.ActiveCollisionTypes.KINEMATIC_FIXED | RAPIER.ActiveCollisionTypes.KINEMATIC_KINEMATIC,
       ),
       body,
     )
     queriesStale = true
     const lastCollisions: number[] = []
+    const lastContacts: CharacterContact[] = []
     return {
       colliderHandle: collider.handle,
       translation: () => {
@@ -584,12 +617,18 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
         // that gameplay triggers key off (not a distance heuristic). The same pass answers whether
         // a rise was stopped from above, since that is the same contact list seen from another angle.
         lastCollisions.length = 0
+        lastContacts.length = 0
         let ceiling = false
         const n = controller.numComputedCollisions()
         for (let i = 0; i < n; i++) {
           const hit = controller.computedCollision(i)
           const h = hit?.collider?.handle
           if (h !== undefined && h !== null) lastCollisions.push(h)
+          if (hit !== null && hit.collider !== null) {
+            const normal = vec3(hit.normal1.x, hit.normal1.y, hit.normal1.z)
+            const kind = normal.y >= GROUND_NORMAL_MIN_Y ? 'floor' : normal.y < CEILING_NORMAL_MAX_Y ? 'ceiling' : 'wall'
+            lastContacts.push({ colliderHandle: hit.collider.handle, normal, kind, friction: hit.collider.friction(), restitution: hit.collider.restitution() })
+          }
           // Only while rising: grazing an overhang on the way *down* is not a roof stopping us, and
           // reporting it as one would stop the fall.
           if (desired.y > 0 && hit !== null && hit.normal1.y < CEILING_NORMAL_MAX_Y) ceiling = true
@@ -673,6 +712,7 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
         }
       },
       collisions: () => lastCollisions.slice(),
+      contacts: () => lastContacts.slice(),
       /**
        * The **sensors** the capsule is currently inside (ADR 0054).
        *

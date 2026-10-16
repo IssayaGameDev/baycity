@@ -68,6 +68,9 @@ export const createRagdoll = (opts: RagdollOptions): Ragdoll => {
       // Everything except character capsules — the dead player's own is still standing invisibly at the
       // death point, and parts were coming to rest on it (see layers.ts).
       layers: CORPSE_LAYERS,
+      // A floor's friction and bounciness as set, not halved by the part's own (ADR 0231): ice slides a body, a
+      // trampoline bounces it.
+      takesSurface: true,
     })
     body.setLinvel(velocity)
     bodies[name] = body

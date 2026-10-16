@@ -68,7 +68,7 @@ Gravity scale is chosen from `vy` at tick start, only when airborne (`under === 
 | `base` | `MovementBase \| undefined` | `{ colliderHandle, localPos }` — ridden surface and position **in its frame** |
 | `carry` | `Vec3` | output only: world velocity received without asking (ride, shove, wall). x/z = `(applied − v·dt)/dt`; y = ride only |
 | `launch` | m/s | pending upward speed set from outside (bumper, ADR 0032); consumed by the step |
-| `bounce` | m/s | pending upward speed a landing on a bouncy floor earned (ADR 0229); consumed by the step, **added** to a jump taken then |
+| `bounce` | `Vec3`, m/s | what a landing on a bouncy floor earned (ADR 0229, 0232): `y` the take-off, consumed by the step and **added** to a jump taken then; `x`/`z` a sloped floor's sideways throw, added after that step's horizontal solve |
 | `impulse` | `Vec3` | pending velocity **added** by the step (ADR 0059); zeroed in place after use; `y > 0` leaves the surface, flat keeps footing |
 | `coyote` | s | grace remaining; refilled on footing, spent to 0 on leaving |
 | `jumpBuffer` | s | press pending; refilled while `cmd.jump`, spent on fire |
@@ -189,9 +189,11 @@ synthesised deck contact, a surface nobody set.
 | grip | `MIN_GRIP + (1 − MIN_GRIP)·held`, `MIN_GRIP` 0.1 (ADR 0230): the approach rate × `grip` while a direction is pushed, so a frictionless floor still steers, slowly |
 | slope | held < 1: `g·n_y·(n_x, n_z)` added each slice **before** the approach, so the floor holds against it; a slide where it cannot. Speed may then pass Max Speed downhill |
 | bounce | landing (`!wasGrounded && grounded`, `vy < 0`) on `restitution e > 0`: `bounce = riseSpeedFor(e²·dropHeightFor(−vy))` — the height the fall came from on this tuning's curve (apex window, `fallGravityScale`), and the take-off that rises `e²` of it; spent next step, `leaving`; ≥ `MIN_BOUNCE` 1 m/s. The floor is `under`, else a probe from the tick's start reaching `−applied.y` further — a fast fall lands on a floor the first probe could not reach, and the move lands only at the world's step |
-| defaults | grip 1 and `e` 0 run none of it: a floor nobody set is exactly what it was |
+| floor angle | the landing's velocity reflected about the floor's normal (ADR 0232): `kick = (1 + k)·into`, `k` the ball rule's rebound over the impact, `bounce = (kick·n_x, v_y + kick·n_y, kick·n_z)` — flat, exactly the ball rule; a slope throws downhill |
+| walls, ceilings | after the move, each `contacts()` surface not `floor`, once a step (ADR 0232): moving into it, `e > 0` and `into·e ≥ MIN_BOUNCE` → `v += (1 + e)·into·n`, full control kept; else a `wall` with `friction > 0.5` → the speed along it less `(friction ÷ 0.5 − 1)·into`, falling slower down it too. Before the roof's `vy = 0`, so a bounced rise is not cancelled |
+| defaults | grip 1, `e` 0 and friction ≤ 0.5 run none of it: a surface nobody set is exactly what it was |
 
-`surfaces.test.ts`: ice slower to start and to stop, a frictionless floor turned round on and glided on, defaults and grippier floors identical to an unset one, a
+`surfaces.test.ts`: ice slower to start and to stop, a frictionless floor turned round on and glided on, a bouncy wall and ceiling throwing back and unset ones not, a held run into a bouncy wall never through it, a grippy wall slowing a fall, a bounce off a slope going downhill, defaults and grippier floors identical to an unset one, a
 frictionless 20° slope sliding, a 0.8 floor rising to 1.92 m of a 3 m drop, every landing from 2 to 16 m bouncing, a jump adding to it, the probe's surface.
 
 ## `createLocomotion` / `LOCOMOTION_DEF` (`locomotion.ts`)

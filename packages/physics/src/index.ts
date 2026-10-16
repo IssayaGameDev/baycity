@@ -14,6 +14,7 @@ export type {
   CharacterOptions,
   CharacterBody,
   GroundContact,
+  CharacterContact,
   CastHit,
   SphereCastOptions,
   SphereOverlapOptions,

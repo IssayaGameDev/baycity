@@ -271,10 +271,11 @@ export interface CharacterState {
    */
   launch: number
   /**
-   * The bounce a landing on a bouncy surface earned (ADR 0229), in m/s up, spent on the next step as a launch is —
-   * but **added** to a jump taken then, where a launch outranks one. 0 means none pending.
+   * The bounce a landing on a bouncy surface earned (ADR 0229, 0232), m/s: `y` up, spent on the next step as a launch is
+   * — but **added** to a jump taken then, where a launch outranks one — and `x`/`z` what a sloped floor throws you
+   * sideways, added once that step's horizontal is solved. `y` 0 means none pending.
    */
-  bounce: number
+  bounce: Vec3
   /**
    * A velocity (m/s) something outside locomotion wants **added** on the next step, then **consumed**
    * (ADR 0059).
@@ -364,7 +365,7 @@ export const addCharacterWith = (world: PhysicsWorld, spawn: Vec3, opts: Partial
   vz: 0,
   vy: 0,
   launch: 0,
-  bounce: 0,
+  bounce: vec3(0, 0, 0),
   impulse: vec3(0, 0, 0),
   coyote: 0,
   jumpBuffer: 0,
@@ -389,7 +390,7 @@ export const addCharacter = (world: PhysicsWorld, spawn: Vec3, layers?: Collisio
   vz: 0,
   vy: 0,
   launch: 0,
-  bounce: 0,
+  bounce: vec3(0, 0, 0),
   impulse: vec3(0, 0, 0),
   coyote: 0,
   jumpBuffer: 0,
@@ -630,7 +631,9 @@ export const stepCharacter = (
   // off `jumping`. A bumper does not require footing: you can be thrown by clipping one in the air.
   const launching = state.launch > 0
   // A bounce leaves the surface as a launch does (ADR 0229).
-  const bouncing = state.bounce > 0
+  const bouncing = state.bounce.y > 0
+  /** This step's bounce, kept for its sideways part: the field is spent below. */
+  const bounced = state.bounce
   // An impulse with any upward component leaves the surface, for the reason on the field: while riding, the
   // surface owns the vertical outright, so an upward push that kept its footing would simply be discarded.
   // A flat impulse keeps its footing on purpose — a ground dash is not a jump.
@@ -649,14 +652,14 @@ export const stepCharacter = (
   // A bounce and a jump on one tick add (ADR 0229, Kodjo's call): jumping off a bouncy surface goes higher, as a
   // pogo does. A launch still outranks both.
   if (launching) state.vy = state.launch
-  else if (bouncing) state.vy = state.bounce + (jumping ? Math.sqrt(2 * tuning.gravity * tuning.jumpHeight) : 0)
+  else if (bouncing) state.vy = state.bounce.y + (jumping ? Math.sqrt(2 * tuning.gravity * tuning.jumpHeight) : 0)
   else if (jumping) state.vy = Math.sqrt(2 * tuning.gravity * tuning.jumpHeight)
   // Only a jump is the player's to cut short. A launch clears the flag instead of setting it, because
   // letting go of the button must not cancel a throw the level gave you — nor a bounce the surface gave.
   if (launching || bouncing || state.impulse.y > 0) state.jumpCut = false
   else if (jumping) state.jumpCut = true
   state.launch = 0
-  state.bounce = 0
+  state.bounce = vec3(0, 0, 0)
 
   // Variable jump height: releasing the button mid-rise keeps the fraction of the climb still to come.
   // Gated on `!jumping` so the jump's own tick is never cut — with the buffer, a tap is `cmd.jump` for a
@@ -831,6 +834,8 @@ export const stepCharacter = (
     added.y += y
     added.z += z
   }
+  // A sloped floor's bounce throws sideways too (ADR 0232): after the solve, for the reason the inherit below gives.
+  if (bouncing && !launching && (bounced.x !== 0 || bounced.z !== 0)) add(bounced.x, 0, bounced.z)
   if (leaving && ride !== undefined) {
     add(ride.x / dt, ride.y / dt, ride.z / dt)
     state.liftStore = 0
@@ -1082,8 +1087,19 @@ export const stepCharacter = (
   if (!wasGrounded && state.grounded && state.vy < 0) {
     const floor = under ?? state.body.probeGround(Math.max(0, -applied.y))
     const e = floor?.restitution ?? 0
-    const up = e > 0 ? riseSpeedFor(e * e * dropHeightFor(-state.vy, tuning), tuning) : 0
-    if (up >= MIN_BOUNCE) state.bounce = up
+    if (floor !== undefined && e > 0) {
+      /**
+       * **Off the floor's angle** (ADR 0232, Kodjo's call): the velocity reflected about the floor's normal — the part
+       * into it comes back `k` times over, the rest is kept. `k` is what the ball rule above makes of this fall on
+       * flat ground (its rebound over the impact), so a flat floor is exactly that rule; a slope throws you downhill.
+       */
+      const k = riseSpeedFor(e * e * dropHeightFor(-state.vy, tuning), tuning) / -state.vy
+      const n = floor.normal
+      const into = -(state.vx * n.x + state.vy * n.y + state.vz * n.z)
+      const kick = (1 + k) * into
+      const up = state.vy + kick * n.y
+      if (into > 0 && up >= MIN_BOUNCE) state.bounce = vec3(kick * n.x, up, kick * n.z)
+    }
   }
   if (state.grounded && state.vy < 0) state.vy = 0
   // Landing ends the rise, so there is no jump left to cut.
@@ -1094,6 +1110,41 @@ export const stepCharacter = (
   // flag, so the animation says so too). Skipped while riding — there the vertical belongs to the
   // surface and `vy` is already 0, so a rising platform pressing us into a roof is the surface's
   // problem to resolve, not a jump to cancel.
+  /**
+   * **Walls and ceilings** (ADR 0232, Kodjo's calls): what the move ran into, other than the floor, as a loose body
+   * meets it. A bouncy one throws back the part of the velocity going into it, its bounciness times over, and the
+   * player keeps full control after; a wall grippier than a surface nobody set slows the slide along it by how hard
+   * it is pressed — scraping, and down a wall, falling slower. Each surface once a step, by its first contact; at the
+   * defaults, none of it runs.
+   */
+  const met = new Set<number>()
+  for (const c of state.body.contacts()) {
+    if (c.kind === 'floor' || met.has(c.colliderHandle)) continue
+    met.add(c.colliderHandle)
+    const n = c.normal
+    const into = -(state.vx * n.x + state.vy * n.y + state.vz * n.z)
+    if (!(into > 0)) continue
+    if (c.restitution > 0 && into * c.restitution >= MIN_BOUNCE) {
+      const kick = (1 + c.restitution) * into
+      state.vx += kick * n.x
+      state.vy += kick * n.y
+      state.vz += kick * n.z
+      continue
+    }
+    if (c.kind === 'wall' && c.friction > DEFAULT_FRICTION) {
+      const grab = (c.friction / DEFAULT_FRICTION - 1) * into
+      const tx = state.vx + into * n.x
+      const ty = state.vy + into * n.y
+      const tz = state.vz + into * n.z
+      const along = Math.hypot(tx, ty, tz)
+      if (along > 1e-9) {
+        const keep = Math.max(0, along - grab) / along
+        state.vx = -into * n.x + tx * keep
+        state.vy = -into * n.y + ty * keep
+        state.vz = -into * n.z + tz * keep
+      }
+    }
+  }
   if (ceiling && !riding && state.vy > 0) state.vy = 0
 
   // Re-anchor in the base's frame. `move` only sets the body's target for this tick's step, so the
