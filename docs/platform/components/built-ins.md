@@ -8,7 +8,7 @@ Animation. A game's own components have none, and go under the game's name.
 
 | set | type | params | notes |
 |---|---|---|---|
-| `ENGINE_COMPONENTS` (`engine/`) | `Collider` | `shape: collider`, `center: vec3`, `trigger: bool` (ADR 0054) | repeatable |
+| `ENGINE_COMPONENTS` (`engine/`) | `Collider` | `shape: collider`, `center: vec3`, `trigger: bool` (ADR 0054), `friction: number` (0.5, 0–2), `bounciness: number` (0, 0–1) — both hidden on a trigger (ADR 0229) | repeatable; the player feels both ([humanoid/controller.md](../humanoid/controller.md)) |
 | | `Renderer`, shown as **Mesh Renderer** (ADR 0153) | `model: asset(model)` — an asset id, or a **built-in shape** `builtin:box` / `rounded-box` / `sphere` / `capsule` / `quad` (ADR 0189) sized by the node's scale (ADR 0090, `content.md`); `''` draws the colliders. `material: asset(material)` | singleton |
 | | `MaterialOverride` | `material: asset(material)` | singleton; cascades down |
 | | `Spawn` | — | singleton |

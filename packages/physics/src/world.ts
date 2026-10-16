@@ -49,7 +49,10 @@ export interface BodyOptions {
   /** Initial orientation (unit quaternion). Omit for identity. Used for tilted colliders
    * (ramps) and the starting pose of a rotating body. */
   readonly rotation?: Quat
+  /** Bounciness, 0 to 1: Rapier's restitution, 0 its default. */
   readonly restitution?: number
+  /** Grip: Rapier's friction coefficient, `DEFAULT_FRICTION` its default (ADR 0229). */
+  readonly friction?: number
   /** Linear velocity damping — higher makes a pushed body settle sooner. */
   readonly linearDamping?: number
   readonly layers?: CollisionLayers
@@ -129,7 +132,13 @@ export interface GroundContact {
   point: Vec3
   /** World-space surface normal at that point. */
   normal: Vec3
+  /** The surface's friction and bounciness (ADR 0229); absent, Rapier's defaults — `DEFAULT_FRICTION`, 0. */
+  friction?: number
+  restitution?: number
 }
+
+/** Rapier's friction when a collider sets none: what a surface the designer has not touched grips with (ADR 0229). */
+export const DEFAULT_FRICTION = 0.5
 
 /**
  * A kinematic-character-controller body (SEED §4-ready): crisp, non-bouncy
@@ -357,9 +366,10 @@ const liveShapeFor = (shape: ShapeDesc): RAPIER.Shape => {
 /** Rapier packs interaction groups into one u32: memberships in the high half, filter in the low half. */
 const packLayers = (l: CollisionLayers): number => ((l.belongsTo & 0xffff) << 16) | (l.collidesWith & 0xffff)
 
-const makeCollider = (shape: ShapeDesc, restitution: number | undefined, layers: CollisionLayers | undefined, sensor: boolean | undefined) => {
+const makeCollider = (shape: ShapeDesc, restitution: number | undefined, friction: number | undefined, layers: CollisionLayers | undefined, sensor: boolean | undefined) => {
   let cd = descFor(shape)
   if (restitution !== undefined) cd = cd.setRestitution(restitution)
+  if (friction !== undefined) cd = cd.setFriction(friction)
   if (layers !== undefined) cd = cd.setCollisionGroups(packLayers(layers))
   if (sensor === true) cd = cd.setSensor(true)
   return cd
@@ -398,7 +408,7 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
     if (o.rotation !== undefined) desc = desc.setRotation(o.rotation)
     if (o.linearDamping !== undefined) desc = desc.setLinearDamping(o.linearDamping)
     const body = world.createRigidBody(desc)
-    const collider = world.createCollider(makeCollider(o.shape, o.restitution, o.layers, o.sensor), body)
+    const collider = world.createCollider(makeCollider(o.shape, o.restitution, o.friction, o.layers, o.sensor), body)
     queriesStale = true
     return {
       handle: body.handle,
@@ -461,7 +471,7 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
       RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(o.position.x, o.position.y, o.position.z),
     )
     const collider = world.createCollider(
-      makeCollider({ kind: 'capsule', halfHeight: o.halfHeight, radius: o.radius }, undefined, o.layers, undefined),
+      makeCollider({ kind: 'capsule', halfHeight: o.halfHeight, radius: o.radius }, undefined, undefined, o.layers, undefined),
       body,
     )
     // The controller's queries take their groups per call rather than reading the collider's, so the
@@ -478,7 +488,7 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
      * query and the controller already pass sensors by, so it blocks and holds up nothing.
      */
     const skin = world.createCollider(
-      makeCollider({ kind: 'capsule', halfHeight: o.halfHeight, radius: o.radius + TOUCH_SKIN }, undefined, o.layers, true).setActiveCollisionTypes(
+      makeCollider({ kind: 'capsule', halfHeight: o.halfHeight, radius: o.radius + TOUCH_SKIN }, undefined, undefined, o.layers, true).setActiveCollisionTypes(
         RAPIER.ActiveCollisionTypes.DEFAULT | RAPIER.ActiveCollisionTypes.KINEMATIC_FIXED | RAPIER.ActiveCollisionTypes.KINEMATIC_KINEMATIC,
       ),
       body,
@@ -657,6 +667,9 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
           colliderHandle: hit.collider.handle,
           point: vec3(t.x, t.y - hit.timeOfImpact, t.z),
           normal: vec3(hit.normal.x, hit.normal.y, hit.normal.z),
+          // What the surface is made of, for the character to feel it (ADR 0229).
+          friction: hit.collider.friction(),
+          restitution: hit.collider.restitution(),
         }
       },
       collisions: () => lastCollisions.slice(),

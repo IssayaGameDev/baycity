@@ -19,4 +19,4 @@ export type {
   SphereOverlapOptions,
   CollisionLayers,
 } from './world'
-export { initPhysics, createPhysicsWorld } from './world'
+export { initPhysics, createPhysicsWorld, DEFAULT_FRICTION } from './world'

@@ -1,5 +1,5 @@
 import { conjQuat, rotateVec3, vec3, type InputCommand, type Quat, type Vec3 } from '@mp/core'
-import { type CharacterBody, type CharacterOptions, type CollisionLayers, type PhysicsWorld } from '@mp/physics'
+import { DEFAULT_FRICTION, type CharacterBody, type CharacterOptions, type CollisionLayers, type PhysicsWorld } from '@mp/physics'
 
 /**
  * **One** ground controller: a kinematic capsule with Roblox-like locomotion for a third-person camera
@@ -45,6 +45,27 @@ const SETTLE_DT = 1 / 30
  * measured at 0.020 m. Seating to the arrival margin instead would hold every rider a visible 5 cm clear.
  */
 const SEAT_OFFSET = 0.02
+/** The smallest bounce worth one, m/s up (ADR 0229): a few centimetres' hop. Under it a bouncy surface lets the player settle. */
+const MIN_BOUNCE = 1
+
+/**
+ * How far a fall from rest comes down to reach `v` m/s on this tuning's gravity curve (ADR 0229): light through the
+ * apex window, then heavy. Without terminal velocity, which only makes a real drop longer — and its bounce lower.
+ */
+const dropHeightFor = (v: number, t: CharacterTuning): number => {
+  const a = t.apexSpeed
+  const apex = t.gravity * t.apexGravityScale
+  if (v <= a) return (v * v) / (2 * apex)
+  return (a * a) / (2 * apex) + (v * v - a * a) / (2 * t.gravity * t.fallGravityScale)
+}
+
+/** The take-off speed that rises `h` m on this tuning's gravity curve: full gravity, then light through the apex. */
+const riseSpeedFor = (h: number, t: CharacterTuning): number => {
+  const a = t.apexSpeed
+  const apex = t.gravity * t.apexGravityScale
+  const top = (a * a) / (2 * apex)
+  return h <= top ? Math.sqrt(2 * apex * h) : Math.sqrt(2 * t.gravity * (h - top) + a * a)
+}
 
 /** Is this world point still under the capsule, rather than somewhere we have walked away from? */
 const overhead = (point: Vec3, at: Vec3): boolean => Math.hypot(point.x - at.x, point.z - at.z) <= CHAR_RADIUS
@@ -248,6 +269,11 @@ export interface CharacterState {
    */
   launch: number
   /**
+   * The bounce a landing on a bouncy surface earned (ADR 0229), in m/s up, spent on the next step as a launch is —
+   * but **added** to a jump taken then, where a launch outranks one. 0 means none pending.
+   */
+  bounce: number
+  /**
    * A velocity (m/s) something outside locomotion wants **added** on the next step, then **consumed**
    * (ADR 0059).
    *
@@ -336,6 +362,7 @@ export const addCharacterWith = (world: PhysicsWorld, spawn: Vec3, opts: Partial
   vz: 0,
   vy: 0,
   launch: 0,
+  bounce: 0,
   impulse: vec3(0, 0, 0),
   coyote: 0,
   jumpBuffer: 0,
@@ -360,6 +387,7 @@ export const addCharacter = (world: PhysicsWorld, spawn: Vec3, layers?: Collisio
   vz: 0,
   vy: 0,
   launch: 0,
+  bounce: 0,
   impulse: vec3(0, 0, 0),
   coyote: 0,
   jumpBuffer: 0,
@@ -557,6 +585,15 @@ export const stepCharacter = (
       }
     }
   }
+  /**
+   * **What the ground is made of** (ADR 0229, Kodjo's call: the player feels a surface as a loose object does). Its
+   * grip as a share of a surface nobody set — never more, so a grippy floor is today's floor — scales speeding up
+   * and braking alike, and below 1 a slope pulls downhill against it. 1 off the ground, and on a deck synthesised
+   * below, which carries no surface.
+   */
+  const grip = under === undefined ? 1 : Math.min(1, Math.max(0, (under.friction ?? DEFAULT_FRICTION) / DEFAULT_FRICTION))
+  /** Footing as of last tick, for telling a landing this tick. */
+  const wasGrounded = state.grounded
   /** World height of the soles, as of the start of this tick. The probe's contact is compared against it. */
   const feetY = state.body.translation().y - STAND_HEIGHT
   const frame = under !== undefined && platforms !== undefined ? platforms(under.colliderHandle) : undefined
@@ -585,11 +622,13 @@ export const stepCharacter = (
   // A launch leaves the surface exactly as a jump does, so every decision below keys off `leaving` rather than
   // off `jumping`. A bumper does not require footing: you can be thrown by clipping one in the air.
   const launching = state.launch > 0
+  // A bounce leaves the surface as a launch does (ADR 0229).
+  const bouncing = state.bounce > 0
   // An impulse with any upward component leaves the surface, for the reason on the field: while riding, the
   // surface owns the vertical outright, so an upward push that kept its footing would simply be discarded.
   // A flat impulse keeps its footing on purpose — a ground dash is not a jump.
   const impulsing = state.impulse.x !== 0 || state.impulse.y !== 0 || state.impulse.z !== 0
-  const leaving = jumping || launching || state.impulse.y > 0
+  const leaving = jumping || launching || bouncing || state.impulse.y > 0
   // Spend both windows on the way out. Without this the counters keep running while airborne and a held
   // button gets a second jump out of the same ledge, two ticks after the first.
   if (leaving) {
@@ -600,13 +639,17 @@ export const stepCharacter = (
 
   // A launch outranks a jump on the tick both land: the bumper is the bigger, more deliberate event, and
   // taking the larger of the two would let a jump silently weaken a weak bumper.
+  // A bounce and a jump on one tick add (ADR 0229, Kodjo's call): jumping off a bouncy surface goes higher, as a
+  // pogo does. A launch still outranks both.
   if (launching) state.vy = state.launch
+  else if (bouncing) state.vy = state.bounce + (jumping ? Math.sqrt(2 * tuning.gravity * tuning.jumpHeight) : 0)
   else if (jumping) state.vy = Math.sqrt(2 * tuning.gravity * tuning.jumpHeight)
   // Only a jump is the player's to cut short. A launch clears the flag instead of setting it, because
-  // letting go of the button must not cancel a throw the level gave you.
-  if (launching || state.impulse.y > 0) state.jumpCut = false
+  // letting go of the button must not cancel a throw the level gave you — nor a bounce the surface gave.
+  if (launching || bouncing || state.impulse.y > 0) state.jumpCut = false
   else if (jumping) state.jumpCut = true
   state.launch = 0
+  state.bounce = 0
 
   // Variable jump height: releasing the button mid-rise keeps the fraction of the climb still to come.
   // Gated on `!jumping` so the jump's own tick is never cut — with the buffer, a tap is `cmd.jump` for a
@@ -673,6 +716,16 @@ export const stepCharacter = (
     const vx0 = state.vx
     const vz0 = state.vz
     if (state.grounded) {
+      /**
+       * A slippery slope pulls downhill (ADR 0229): gravity's part along it, `g·sinθ`, laid flat — `g·n_y·(n_x, n_z)`
+       * from the surface's normal. Added **before** the approach below, so grip holds against it: where the grip's
+       * rate covers it nothing moves, and where it does not the player slides, as a box on ice does. Only below full
+       * grip, so a floor nobody set is exactly what it was.
+       */
+      if (grip < 1 && under !== undefined) {
+        state.vx += tuning.gravity * under.normal.y * under.normal.x * h
+        state.vz += tuning.gravity * under.normal.y * under.normal.z * h
+      }
       const now = Math.hypot(state.vx, state.vz)
       /**
        * Is the change we need speeding us up, or slowing us down?
@@ -687,7 +740,8 @@ export const stepCharacter = (
        */
       const along = now < 1e-4 ? 1 : ((targetX - state.vx) * state.vx + (targetZ - state.vz) * state.vz) / now
       const time = hasInput ? tuning.groundAccelTime : tuning.groundStopTime
-      const rate = Math.min(tuning.moveSpeed / Math.max(time, 1e-3), groundCeiling(along >= 0))
+      // Grip scales both ways (ADR 0229, Kodjo's call): on ice you are slow to get going and slow to stop.
+      const rate = Math.min(tuning.moveSpeed / Math.max(time, 1e-3), groundCeiling(along >= 0)) * grip
       approachVec(state, targetX, targetZ, rate * h)
     } else if (hasInput) {
       const rate = Math.min(accel * tuning.airControl, scaleCeiling(tuning.airMaxAccel, tuning))
@@ -1009,6 +1063,19 @@ export const stepCharacter = (
     state.liftVel = vec3(ride.x / dt, ride.y / dt, ride.z / dt)
     state.liftStore = tuning.liftStoreTime
   } else if (!leaving) state.liftStore = Math.max(0, state.liftStore - dt)
+  /**
+   * **Landing on a bouncy surface** (ADR 0229) throws back up, from the next step, as a ball does: to its bounciness
+   * squared times the height the fall came from, so a higher drop bounces higher and each bounce is that share of the
+   * last, until it is too small to be one. Worked on this tuning's own gravity curve, which falls heavier than it
+   * rises — the bounce's share of the speed alone would rise higher than it fell. The surface is read where the feet
+   * came down, which a fast fall reaches within the tick it lands.
+   */
+  if (!wasGrounded && state.grounded && state.vy < 0) {
+    const floor = under ?? state.body.probeGround()
+    const e = floor?.restitution ?? 0
+    const up = e > 0 ? riseSpeedFor(e * e * dropHeightFor(-state.vy, tuning), tuning) : 0
+    if (up >= MIN_BOUNCE) state.bounce = up
+  }
   if (state.grounded && state.vy < 0) state.vy = 0
   // Landing ends the rise, so there is no jump left to cut.
   if (state.grounded) state.jumpCut = false

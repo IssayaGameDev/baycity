@@ -40,7 +40,7 @@ type ShapeDesc =
 
 ### `BodyOptions`
 
-`{ position, shape, rotation?: Quat, restitution?, linearDamping?, layers?: CollisionLayers, sensor?: boolean }`
+`{ position, shape, rotation?: Quat, restitution?, friction?, linearDamping?, layers?: CollisionLayers, sensor?: boolean }` — `friction` Rapier's, `DEFAULT_FRICTION` (0.5) when absent; `restitution` 0 when absent (ADR 0229)
 
 ### `PhysicsBody`
 
@@ -54,7 +54,7 @@ interface CharacterBody {
   colliderHandle
   translation(); setPosition(p)          // setPosition also syncs the collider immediately
   move(desired: Vec3, snapAtLeast?: number): { grounded; applied: Vec3; ceiling }
-  probeGround(extraReach?): GroundContact | undefined   // { colliderHandle, point, normal }
+  probeGround(extraReach?): GroundContact | undefined   // { colliderHandle, point, normal, friction, restitution } — the floor's surface (ADR 0229)
   collisions(): number[]                 // solids contacted during the last move
   overlaps(): number[]                   // sensors currently overlapped (ADR 0054)
   touching(): number[]                   // solids the touch skin overlaps (ADR 0188), below

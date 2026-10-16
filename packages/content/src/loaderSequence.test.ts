@@ -1,10 +1,10 @@
 import { vec3, type Vec3 } from '@mp/core'
-import { createPhysicsWorld, initPhysics, type PhysicsWorld } from '@mp/physics'
+import { createPhysicsWorld, DEFAULT_FRICTION, initPhysics, type PhysicsWorld } from '@mp/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import { instantiateLevel } from './loader'
 import { COUNTDOWN } from './countdown'
-import { COLLIDER, LIGHT, RENDERER, TEXT, type TypeInfo } from './nodes'
+import { COLLIDER, COLLIDER_FRICTION, LIGHT, RENDERER, TEXT, type TypeInfo } from './nodes'
 import type { Stage, Step, Timing } from './sequence'
 import { SEQUENCE } from './sequenceData'
 import type { ComponentData, Level, Node } from './types'
@@ -434,5 +434,20 @@ describe('a countdown', () => {
     const loaded = load(levelOf([platform(), sign(null)]))
     loaded.update(1000)
     expect(loaded.texts[0]!.text).toBe('Watch the platform')
+  })
+})
+
+/** What a surface is made of (ADR 0229): a Collider's friction and bounciness on the body the player stands on. */
+describe('a surface', () => {
+  const floor = (params: Record<string, unknown>): Node => node('floor', [comp('fc', COLLIDER, { shape: { kind: 'box', halfExtents: vec3(5, 0.5, 5) }, ...params })])
+  const groundOf = (level: Level) => {
+    load(level)
+    return world.addCharacter({ position: vec3(0, 1.6, 0), radius: 0.4, halfHeight: 0.6 }).probeGround()
+  }
+
+  it('is what its Collider says, and Rapier’s own where it says nothing — the number content and physics both call the default', () => {
+    expect(groundOf(levelOf([floor({ friction: 0.1, bounciness: 0.6 })]))).toMatchObject({ friction: expect.closeTo(0.1, 6), restitution: expect.closeTo(0.6, 6) })
+    expect(groundOf(levelOf([floor({})]))).toMatchObject({ friction: DEFAULT_FRICTION, restitution: 0 })
+    expect(COLLIDER_FRICTION).toBe(DEFAULT_FRICTION)
   })
 })

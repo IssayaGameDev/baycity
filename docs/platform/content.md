@@ -75,6 +75,7 @@ interface WorldLight { …; position; rotation; visible: boolean /* off while it
 
 Build rules:
 - Frame `animated` if a sequence moves it (below), an enabled `moves` component, or an animated ancestor → kinematic bodies; else fixed.
+- `Collider.friction` / `.bounciness` → the body's `friction` / `restitution`, only where they differ from Rapier's own (`COLLIDER_FRICTION` 0.5, 0; ADR 0229).
 - `Collider.trigger` → sensor (ADR 0054), still in `colliderHandles`. Shape and `center` scaled by frame scale (box/convex exact, ball/capsule averaged). `cylinder` throws.
 - Draw (ADR 0153): an enabled `Renderer` with a model → one visual listing all handles, **at the node's pivot** and sized by its world scale (ADR 0207) — it rides the first body when that body sits on the pivot, else a body-less dynamic of its own; with none → one per collider; no `Renderer` → nothing. The model is `modelOf(components)` (`nodes.ts`): the enabled `Renderer`'s `model`. There is no `Mesh` component any more; a file naming one does not load. `MaterialOverride` cascades down over `Renderer.material`; `''` = unsurfaced. A model is an asset id or a **built-in shape** (below).
 - Placement with inherited children opens a new `scope` (own id + prefab root id; first writer wins).

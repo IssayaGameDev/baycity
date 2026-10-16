@@ -24,6 +24,7 @@ import { drivenComponents, settleDrives } from './drives'
 import { refPathOf } from './refPath'
 import {
   COLLIDER,
+  COLLIDER_FRICTION,
   LIGHT,
   MATERIAL_OVERRIDE,
   SPAWN,
@@ -766,9 +767,13 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
         // in `colliderHandles`, so a rule on this node fires the same way — it is only the physical response
         // that goes away.
         const trigger = boolParam(c, 'trigger', false)
+        // What it is made of (ADR 0229), only where it differs from Rapier's own: a surface nobody set is built as before.
+        const friction = numberParam(c, 'friction', COLLIDER_FRICTION)
+        const bounciness = numberParam(c, 'bounciness', 0)
+        const surface = { ...(friction !== COLLIDER_FRICTION ? { friction: Math.max(0, friction) } : {}), ...(bounciness !== 0 ? { restitution: Math.min(1, Math.max(0, bounciness)) } : {}) }
         // Kinematic if anything above it moves, not just if *it* moves: a static node parented to a moving
         // platform travels through the world and a fixed body would leave it behind.
-        const desc = { position: at, rotation: f.worldRot, shape, ...(trigger ? { sensor: true } : {}) }
+        const desc = { position: at, rotation: f.worldRot, shape, ...surface, ...(trigger ? { sensor: true } : {}) }
         const body = f.animated ? world.addKinematicBody(desc) : world.addFixedBody(desc)
         // Built the way level time 0 has it: a platform whose sequence starts with it switched off starts off.
         if (!(f.shown && f.solid)) body.setEnabled(false)

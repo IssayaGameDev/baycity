@@ -29,6 +29,8 @@ export const SPAWN = 'Spawn'
 export const LIGHT = 'Light'
 /** Text in the world (ADR 0189). Surfaced by the loader as a light is; drawn by the renderer. */
 export const TEXT = 'Text'
+/** A `Collider`'s friction when it sets none: Rapier's own, which `@mp/physics` calls `DEFAULT_FRICTION` (ADR 0229). Here, so the level reader needs no physics engine. */
+export const COLLIDER_FRICTION = 0.5
 
 /**
  * The one thing resolution needs to know about a component type, and the only reason this package needs

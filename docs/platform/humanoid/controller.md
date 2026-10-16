@@ -68,6 +68,7 @@ Gravity scale is chosen from `vy` at tick start, only when airborne (`under === 
 | `base` | `MovementBase \| undefined` | `{ colliderHandle, localPos }` — ridden surface and position **in its frame** |
 | `carry` | `Vec3` | output only: world velocity received without asking (ride, shove, wall). x/z = `(applied − v·dt)/dt`; y = ride only |
 | `launch` | m/s | pending upward speed set from outside (bumper, ADR 0032); consumed by the step |
+| `bounce` | m/s | pending upward speed a landing on a bouncy floor earned (ADR 0229); consumed by the step, **added** to a jump taken then |
 | `impulse` | `Vec3` | pending velocity **added** by the step (ADR 0059); zeroed in place after use; `y > 0` leaves the surface, flat keeps footing |
 | `coyote` | s | grace remaining; refilled on footing, spent to 0 on leaving |
 | `jumpBuffer` | s | press pending; refilled while `cmd.jump`, spent on fire |
@@ -176,6 +177,21 @@ the same wall ADR 0104 hit from the platform side.
 Before ADR 0127, for comparison: running down 30° gave 41 % of ticks airborne at 5.5 m/s, 90 % at 30 m/s,
 and one 155 m launch at 283 m/s; uphill the capsule sat 0.05–0.30 m inside the surface, and below 17.5° it
 went through.
+
+## Surfaces (ADR 0229)
+
+The floor's `friction` and `restitution` come with the probe's contact (`@mp/physics`). Off the ground, and on a
+synthesised deck contact, a surface nobody set.
+
+| | |
+| --- | --- |
+| grip | `min(1, friction ÷ DEFAULT_FRICTION)`; the ground's approach rate × grip, speeding up and braking alike |
+| slope | grip < 1: `g·n_y·(n_x, n_z)` added each slice **before** the approach, so grip holds against it; a slide where it cannot. Speed may then pass Max Speed downhill |
+| bounce | landing (`!wasGrounded && grounded`, `vy < 0`) on `restitution e > 0`: `bounce = riseSpeedFor(e²·dropHeightFor(−vy))` — the height the fall came from on this tuning's curve (apex window, `fallGravityScale`), and the take-off that rises `e²` of it; spent next step, `leaving`; ≥ `MIN_BOUNCE` 1 m/s |
+| defaults | grip 1 and `e` 0 run none of it: a floor nobody set is exactly what it was |
+
+`surfaces.test.ts`: ice slower to start and to stop, defaults and grippier floors identical to an unset one, a
+frictionless 20° slope sliding, a 0.8 floor rising to 1.92 m of a 3 m drop, a jump adding to it, the probe's surface.
 
 ## `createLocomotion` / `LOCOMOTION_DEF` (`locomotion.ts`)
 
