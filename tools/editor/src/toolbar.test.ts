@@ -31,6 +31,7 @@ const rig = (over: Partial<ToolbarState> = {}) => {
     playing: false,
     previewing: false,
     grid: true,
+    wireframe: false,
     markers: false,
     surfaceCells: null,
     showingAll: null,
@@ -59,6 +60,7 @@ const rig = (over: Partial<ToolbarState> = {}) => {
     setPlaying: (on) => calls.push(`play:${on}`),
     setPreviewing: (on) => calls.push(`motion:${on}`),
     setGrid: (on) => calls.push(`grid:${on}`),
+    setWireframe: (on) => calls.push(`wireframe:${on}`),
     setSurfaceCells: (on) => calls.push(`cells:${on}`),
     setShowingAll: (on) => calls.push(`reveal:${on}`),
     setMarkers: (on) => calls.push(`markers:${on}`),
@@ -197,10 +199,11 @@ describe('over the viewport', () => {
     r.toolbar.render()
     expect(r.titled(r.overlays, 'Keys').hidden).toBe(false)
     r.titled(r.overlays, 'Grid').click()
+    r.titled(r.overlays, 'Wireframe').click()
     r.titled(r.overlays, 'Markers').click()
     r.titled(r.overlays, 'Keys').click()
     r.titled(r.overlays, 'Reveal').click()
-    expect(r.calls).toEqual(['grid:false', 'markers:true', 'cells:true', 'reveal:true'])
+    expect(r.calls).toEqual(['grid:false', 'wireframe:true', 'markers:true', 'cells:true', 'reveal:true'])
     expect(r.titled(r.overlays, 'Grid').classList.contains('on')).toBe(true)
   })
 

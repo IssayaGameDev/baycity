@@ -81,6 +81,7 @@ import { createHiddenView, keysUnder } from './hiddenView'
 import { createPickTool } from './pickTool'
 import { createPointTool } from './pointTool'
 import { createSelectionEdges } from './selectionEdges'
+import { createWireframe } from './wireframeView'
 import { createPrefabActions } from './prefabActions'
 import { createPlay } from './play'
 import { applySelect, clampTo, primaryOf, rootsOf, type SelectMode } from './selection'
@@ -565,6 +566,8 @@ const edges = createSelectionEdges({
   groupAt: (i) => meshes.groupAt(i),
   playing: () => play.active(),
 })
+/** Every object's edges over the view, on its toolbar toggle (`wireframeView.ts`, ADR 0227). */
+const wireframe = createWireframe({ scene: stage.scene, root: () => meshes.root, playing: () => play.active() })
 
 /** Asset id of the prefab open in prefab mode, or `null` for a level or an unsaved prefab. */
 
@@ -1332,6 +1335,7 @@ const toolbar: Toolbar = createToolbar(
     playing: play.active(),
     previewing: motion.playing(),
     grid: grid.visible,
+    wireframe: wireframe.on(),
     markers: markerGroup.visible,
     surfaceCells: meshes.cells(),
     // `null` while nothing is hidden, so the button stays out of the way until it means something.
@@ -1368,6 +1372,10 @@ const toolbar: Toolbar = createToolbar(
     setGrid: (on) => {
       grid.visible = on
       axes.visible = on
+      refreshUi()
+    },
+    setWireframe: (on) => {
+      wireframe.setOn(on)
       refreshUi()
     },
     setMarkers: (on) => {
@@ -2787,6 +2795,7 @@ const editorFrame = (dt: number): void => {
   controls.update()
   points.frame()
   edges.frame()
+  wireframe.frame()
 }
 stage.start(editorFrame)
 

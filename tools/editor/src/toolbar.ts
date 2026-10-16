@@ -13,7 +13,7 @@ import { icon, type IconName } from './icons'
  *   clock, and Play; undo, redo, Admin for an admin (ADR 0200), the bell and who is in the room (ADR 0155) |
  * | viewport, left edge | Move, Rotate, Scale, Face |
  * | viewport, top left | Global / Local; snap and the active tool's increment |
- * | viewport, top right | Grid, Markers, Keys, Reveal — beside the navigation gizmo |
+ * | viewport, top right | Grid, Wireframe, Markers, Keys, Reveal — beside the navigation gizmo |
  *
  * Icons only, each named with its key in its tooltip. New and Duplicate went: the Project panel makes and
  * copies levels (ADR 0108, ADR 0110).
@@ -64,6 +64,8 @@ export interface ToolbarState {
    */
   previewing: boolean
   grid: boolean
+  /** Every object's edges over the view (ADR 0227). */
+  wireframe: boolean
   markers: boolean
   /**
    * The cells a game would generate on a surface, drawn in place (ADR 0120).
@@ -107,6 +109,7 @@ export interface ToolbarActions {
   setPlaying: (on: boolean) => void
   setPreviewing: (on: boolean) => void
   setGrid: (on: boolean) => void
+  setWireframe: (on: boolean) => void
   setSurfaceCells: (on: boolean) => void
   setShowingAll: (on: boolean) => void
   setMarkers: (on: boolean) => void
@@ -229,13 +232,15 @@ export const createToolbar = (bar: HTMLElement, overlays: HTMLElement, state: ()
   const view = el('div', 'ov ov-view')
   const gridButton = iconButton('ov-b', 'grid', () => actions.setGrid(!state().grid))
   setTitle(gridButton, 'Grid')
+  const wireButton = iconButton('ov-b', 'wireframe', () => actions.setWireframe(!state().wireframe))
+  setTitle(wireButton, 'Wireframe: every object’s edges over the view, yours only (ADR 0227)')
   const markerButton = iconButton('ov-b', 'flag', () => actions.setMarkers(!state().markers))
   setTitle(markerButton, 'Markers: spawn and gameplay-rule gizmos')
   const cellsButton = iconButton('ov-b', 'keycap', () => actions.setSurfaceCells(state().surfaceCells !== true))
   setTitle(cellsButton, 'Keys: where this game would generate cells on a surface, the keyboard’s caps (ADR 0120)')
   const revealButton = iconButton('ov-b', 'enable', () => actions.setShowingAll(state().showingAll !== true))
   setTitle(revealButton, 'Reveal: show everything hidden in the viewport, without un-hiding it (ADR 0132)')
-  view.append(gridButton, markerButton, cellsButton, revealButton)
+  view.append(gridButton, wireButton, markerButton, cellsButton, revealButton)
 
   overlays.append(toolStrip, settings, view)
 
@@ -312,6 +317,7 @@ export const createToolbar = (bar: HTMLElement, overlays: HTMLElement, state: ()
     renderStep(s)
 
     gridButton.classList.toggle('on', s.grid)
+    wireButton.classList.toggle('on', s.wireframe)
     markerButton.classList.toggle('on', s.markers)
     // Hidden, not disabled: a game with nothing to preview has no use for the button.
     cellsButton.hidden = s.surfaceCells === null

@@ -24,26 +24,31 @@ export interface SelectionEdges {
   frame: () => void
 }
 
-const MATERIAL = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7, depthWrite: false })
 /**
- * A hair toward the eye, so an edge lying exactly on its own faces wins against them instead of flickering.
- * Lines take no polygon offset, so it is done where the vertex is projected: a thousandth of the distance in
- * perspective — 5 cm at 50 m, thinner than anything a level is built of at the range it is edited from — and
- * 2 cm along the view in orthographic, where depth is linear and scaling toward the eye would move the line
- * sideways.
+ * A line material for a shape's edges, drawn a hair toward the eye, so an edge lying exactly on its own faces wins
+ * against them instead of flickering. Lines take no polygon offset, so it is done where the vertex is projected: a
+ * thousandth of the distance in perspective — 5 cm at 50 m, thinner than anything a level is built of at the range it
+ * is edited from — and 2 cm along the view in orthographic, where depth is linear and scaling toward the eye would
+ * move the line sideways. The wireframe view's lines are the same, darker (`wireframeView.ts`).
  */
-MATERIAL.onBeforeCompile = (shader) => {
-  shader.vertexShader = shader.vertexShader.replace(
-    '#include <project_vertex>',
-    `#include <project_vertex>
+export const edgeMaterial = (color: number, opacity: number): THREE.LineBasicMaterial => {
+  const material = new THREE.LineBasicMaterial({ color, transparent: true, opacity, depthWrite: false })
+  material.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <project_vertex>',
+      `#include <project_vertex>
   if (isPerspectiveMatrix(projectionMatrix)) mvPosition.xyz *= 0.999;
   else mvPosition.z += 0.02;
   gl_Position = projectionMatrix * mvPosition;`,
-  )
+    )
+  }
+  return material
 }
 
+const MATERIAL = edgeMaterial(0xffffff, 0.7)
+
 /** Is it drawn: itself and every ancestor visible. */
-const shown = (o: THREE.Object3D): boolean => {
+export const shown = (o: THREE.Object3D): boolean => {
   for (let at: THREE.Object3D | null = o; at !== null; at = at.parent) if (!at.visible) return false
   return true
 }
@@ -52,7 +57,7 @@ const shown = (o: THREE.Object3D): boolean => {
  * The meshes whose edges are drawn: every mesh of the selected subtrees, but not a board's surface cells (a
  * grid of flat squares, not an edge of the shape) nor a light's wireframe gizmo, which is lines already.
  */
-const meshesUnder = (roots: readonly THREE.Object3D[]): THREE.Mesh[] => {
+export const meshesUnder = (roots: readonly THREE.Object3D[]): THREE.Mesh[] => {
   const out: THREE.Mesh[] = []
   for (const root of roots)
     root.traverse((o) => {

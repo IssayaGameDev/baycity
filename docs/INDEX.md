@@ -277,5 +277,6 @@ why matters.
 | [0224](adr/0224-a-bulk-edit-is-one-redraw-for-the-room.md) | A bulk edit is one redraw for the room |
 | [0225](adr/0225-the-balance-tab.md) | The Balance tab: the simulated run against the targets |
 | [0226](adr/0226-a-balance-model-rules-in-numbers-out.md) | A balance model: rules in, numbers out |
+| [0227](adr/0227-a-wireframe-view.md) | A wireframe view |
 
 `Design archive/` holds superseded design material and is not maintained.

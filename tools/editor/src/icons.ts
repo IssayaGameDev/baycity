@@ -37,6 +37,7 @@ export type IconName =
   | 'toolFace'
   | 'magnet'
   | 'grid'
+  | 'wireframe'
   | 'flag'
   | 'keycap'
   | 'motion'
@@ -115,6 +116,8 @@ const PATHS: Record<IconName, string> = {
     '<rect x="3.5" y="8.5" width="11" height="11" rx="1" fill="currentColor" fill-opacity="0.35"/><path d="M3.5 8.5l4-4h12v11l-5 4"/><path d="M14.5 8.5l5-4"/>',
   magnet: '<path d="M5 3.5h4.5V11a2.5 2.5 0 0 0 5 0V3.5H19V11a7 7 0 0 1-14 0z"/><path d="M5 7.5h4.5M14.5 7.5H19"/>',
   grid: '<rect x="3.5" y="3.5" width="17" height="17" rx="2"/><path d="M9.2 3.5v17M14.8 3.5v17M3.5 9.2h17M3.5 14.8h17"/>',
+  // A cube's every edge, the far ones too: what the wireframe view draws (ADR 0227).
+  wireframe: '<path d="M4 8.5h11v11H4z"/><path d="M9 4.5h11v11H9z"/><path d="M4 8.5l5-4M15 8.5l5-4M15 19.5l5-4M4 19.5l5-4"/>',
   flag: '<path d="M5.5 21V3.5"/><path d="M5.5 4h12l-2.5 4.5 2.5 4.5h-12"/>',
   keycap: '<rect x="3" y="5.5" width="18" height="13" rx="2.5"/><path d="M7 9.5h.01M10.3 9.5h.01M13.7 9.5h.01M17 9.5h.01M8 14.5h8"/>',
   motion: '<rect x="10.5" y="6.5" width="10" height="11" rx="2"/><path d="M3 9h4.5M2 12h5.5M3 15h4.5"/>',
