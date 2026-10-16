@@ -19,6 +19,8 @@ import {
   AT_REST_POSE,
   SELF,
   SEQUENCE,
+  countdownOf,
+  countdownText,
   UNMOVED,
   channelsOf,
   combineSequences,
@@ -568,6 +570,8 @@ export interface PreviewPose extends LocalPose {
   readonly scale: Vec3
   readonly opacity: number
   readonly shown: boolean
+  /** What a `Countdown` on it says at this instant (ADR 0228); absent without one, or with the sequences off. */
+  readonly text?: string
 }
 
 /** One sequence's moves of one node, as the viewport draws its route (ADR 0144). */
@@ -2091,6 +2095,13 @@ const docOver = (
         ownScale[i] = vec3(authoredScale.x * seq.scale.x, authoredScale.y * seq.scale.y, authoredScale.z * seq.scale.z)
         shownAt[i] = seq.enabled !== false && (p >= 0 ? (shownAt[p] ?? true) : true)
 
+        // A countdown on it (ADR 0228): what its text says now, its sequence found as the loader finds it.
+        const counts = withSequences ? countdownOf(n.view.components) : undefined
+        const ref = counts?.sequence ?? null
+        const holder = ref === null ? null : refTargetIn(all, i, ref.node)
+        const counted = holder === null || ref === null ? undefined : all[holder]?.view.components.find((c) => c.type === SEQUENCE && c.enabled !== false && (ref.component === '' || c.id === ref.component))
+        const says = counts === undefined || counted === undefined ? null : countdownText(counts, compileSequence(sequenceOf(counted)), clocks)
+
         out.push({
           position: { x: t.position.x + seq.position.x, y: t.position.y + seq.position.y, z: t.position.z + seq.position.z },
           rotation: rest,
@@ -2098,6 +2109,7 @@ const docOver = (
           scale: ownScale[i]!,
           opacity: seq.opacity,
           shown: shownAt[i]!,
+          ...(says === null ? {} : { text: says }),
         })
       }
       return out

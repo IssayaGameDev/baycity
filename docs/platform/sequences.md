@@ -67,6 +67,7 @@ repoint them when a subtree's ids are re-minted; `unlinkedNode` and the editor's
 ```ts
 compileSequence(s): CompiledSequence   // once per edit: every start and duration, problems
 sequenceTime(c, nowMs): number         // seconds into a pass: the looping, and only here
+untilStage(c, clocks, index): number | null   // seconds until stage `index` next starts forward; yo-yo: even passes; null past the last (ADR 0228)
 restartsBetween(c, from, to): boolean  // a `restart` crossed into a pass that plays: a cut (ADR 0206)
 sampleSequence(c, { shared, local }): ReadonlyMap<target, SequencePose>   // SELF = '' for the object
 combineSequences(parts: { pose, axes }[], at: NodeFrame): SequenceOffset
@@ -127,6 +128,20 @@ stays the load-time size: a rule measuring a volume reads it as built.
 
 Riding: `sequenceRide.test.ts` (`@mp/tps`) rides a sequence lift through the loader and the character as the
 game ticks them, sliced, to 10 cm at up to a 63 m/s peak; without slicing it falls 434 m.
+
+## A countdown — `countdown.ts` (ADR 0228)
+
+```ts
+countdownOf(components): CountdownDesc | undefined    // { sequence: { node, component } | null; rows: { stage, text }[] }
+countdownText(desc, compiled, clocks): string | null  // the soonest row's text, `{t}` → countdownSeconds(until); null: the Text's own
+countdownSeconds(s)                                   // tenths, rounded up: 0.1 last, never 0.0
+```
+
+The loader, once the tree is built, finds each node with a `Text` and a `Countdown`, its sequence by `findNode` and
+the component id (`''` the first), compiled once; `update` sets `TextItem.text` on the clocks it poses at, the
+Text's own words when `null`. `addTexts`' `sync` lays a text out again only when its words changed. The editor:
+`posesAt(t, { sequences: true })` gives a node's `PreviewPose.text`, its sequence found by `refTargetIn`; the Motion
+preview hands it to `ItemMeshes.setTextAt(i, words | null)` — `null` the node's own, once the clock stops.
 
 ## Tests — `sequence.test.ts`
 

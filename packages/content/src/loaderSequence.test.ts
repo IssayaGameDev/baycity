@@ -3,6 +3,7 @@ import { createPhysicsWorld, initPhysics, type PhysicsWorld } from '@mp/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import { instantiateLevel } from './loader'
+import { COUNTDOWN } from './countdown'
 import { COLLIDER, LIGHT, RENDERER, TEXT, type TypeInfo } from './nodes'
 import type { Stage, Step, Timing } from './sequence'
 import { SEQUENCE } from './sequenceData'
@@ -407,5 +408,31 @@ describe('a model and its colliders', () => {
     loaded.render(1)
     expect(loaded.visuals[0]!.position).toEqual(vec3(5, 2, 0))
     expect(loaded.basePose(loaded.nodes[0]!.colliderHandles[0]!)?.position).toEqual(vec3(7, 2, 0))
+  })
+})
+
+/** A sign counting down to a platform's stages (ADR 0228), on the clock the platform is posed at. */
+describe('a countdown', () => {
+  const fadeIn: Step = { id: 'in', kind: 'fade', to: 1, timing: secs(1), ease: 'linear' }
+  const fadeOut: Step = { id: 'out', kind: 'fade', to: 0, timing: secs(1), ease: 'linear' }
+  const platform = (): Node => node('platform', [...solidBox('platform'), comp('seq', SEQUENCE, { name: '', clock: 'shared', axes: 'object', loop: 'restart', times: 0, offset: 0, stages: [stage(wait(5)), stage(fadeIn), stage(wait(3)), stage(fadeOut)] })])
+  const sign = (sequenceRef: unknown): Node =>
+    node('sign', [comp('t', TEXT, { text: 'Watch the platform' }), comp('cd', COUNTDOWN, { sequence: sequenceRef, rows: [{ stage: 2, text: 'Appears in {t}' }, { stage: 4, text: 'Gone in {t}' }] })])
+
+  it('says the next stage’s words as the level runs, on its sequence’s clock', () => {
+    const loaded = load(levelOf([platform(), sign({ node: 'platform', component: 'seq' })]))
+    const text = loaded.texts[0]!
+    loaded.update(0)
+    expect(text.text).toBe('Appears in 5.0')
+    loaded.update(4950)
+    expect(text.text).toBe('Appears in 0.1')
+    loaded.update(6000)
+    expect(text.text).toBe('Gone in 3.0')
+  })
+
+  it('says the Text’s own words with nothing to count on', () => {
+    const loaded = load(levelOf([platform(), sign(null)]))
+    loaded.update(1000)
+    expect(loaded.texts[0]!.text).toBe('Watch the platform')
   })
 })

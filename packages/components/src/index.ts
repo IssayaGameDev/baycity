@@ -49,6 +49,7 @@ export { isSharedComponent, SHARED_COMPONENT_TYPES, SHARED_COMPONENTS, sharedCom
 export { Bumper } from './shared/bumper'
 export { Hazard } from './shared/hazard'
 export { Sequence } from './shared/sequence'
+export { Countdown } from './shared/countdown'
 export { PLAYER_COMPONENTS } from './player/index'
 export { Death } from './player/death'
 export { DEFAULT_REGISTRY } from './defaults'

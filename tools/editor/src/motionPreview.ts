@@ -44,6 +44,8 @@ export interface MotionPreviewHost {
   renderStatus: () => void
   /** The toolbar's Motion button reads `playing`. */
   toolbarRender: () => void
+  /** What item `i`'s text says: a countdown's words, or its own with `null` (ADR 0228). */
+  setText?: (i: number, words: string | null) => void
 }
 
 export interface MotionPreview {
@@ -133,6 +135,8 @@ export const createMotionPreview = (host: MotionPreviewHost): MotionPreview => {
       // Disabling takes the whole branch, which a hidden group does.
       g.visible = pose.shown
       setOpacity(g, pose.opacity)
+      // A countdown's words at this instant, or the text's own once the clock stops (ADR 0228).
+      host.setText?.(i, pose.text ?? null)
     }
   }
 

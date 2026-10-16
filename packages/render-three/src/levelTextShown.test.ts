@@ -30,3 +30,26 @@ describe('a level text a game fades', () => {
     texts.dispose()
   })
 })
+
+/** A countdown's words reach what is drawn (ADR 0228): laid out again only when they change. */
+describe('a level text whose words change', () => {
+  it('says the item’s words from the next sync', () => {
+    const item: TextItem = {
+      ...{ text: 'Appears in 5.0', font: '', size: 1, color: '#ffffff', align: 'center', width: 0, bold: false, facing: 'object', back: 'mirrored' },
+      node: 'sign',
+      position: { x: 0, y: 0, z: 0 },
+      rotation: { x: 0, y: 0, z: 0, w: 1 },
+      scale: { x: 1, y: 1, z: 1 },
+      drawScale: { x: 1, y: 1, z: 1 },
+      visible: true,
+      opacity: 1,
+    }
+    const texts = addTexts(new THREE.Scene(), [item])
+    const drawn = texts.objects()[0] as unknown as { text: string }
+    expect(drawn.text).toBe('Appears in 5.0')
+    item.text = 'Gone in 2.9'
+    texts.sync()
+    expect(drawn.text).toBe('Gone in 2.9')
+    texts.dispose()
+  })
+})

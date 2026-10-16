@@ -430,6 +430,26 @@ export const sequenceTime = (c: CompiledSequence, nowMs: number): number => {
 }
 
 /**
+ * Seconds until stage `index` (0 the first) next starts playing forward, on the sequence's own clock (ADR 0228): a
+ * pass later when it has started this pass. A yo-yo plays its stages forward on even passes only — on the odd ones
+ * they run backward, a fade-in fading out — so only those count. `null` when it never starts again: past its last
+ * pass, a stage it has not got, or a sequence that takes no time.
+ */
+export const untilStage = (c: CompiledSequence, clocks: SequenceClocks, index: number): number | null => {
+  const pass = c.passSeconds
+  const stage = c.stages[index]
+  if (!(pass > 0) || stage === undefined) return null
+  const s = c.sequence
+  const ms = s.clock === 'local' ? clocks.local : clocks.shared
+  const t = Math.max(0, finiteOr(ms, 0) / 1000) + frac(finiteOr(s.offset, 0)) * c.cycleSeconds
+  let n = Math.max(0, Math.floor((t - stage.start) / pass) + 1)
+  if (s.loop === 'yoyo' && n % 2 === 1) n++
+  const times = Math.floor(nonNegative(s.times))
+  if (times > 0 && n >= times) return null
+  return n * pass + stage.start - t
+}
+
+/**
  * Whether a `restart` sequence went back to its start between two instants (ADR 0206): a pass boundary crossed
  * forward, into a pass that plays — not the hold after its last. A pose function jumps there, and the jump is a
  * **cut, not a move**: whatever reads two poses as motion (a sweep, a body's velocity, a drawn blend, a ride) must

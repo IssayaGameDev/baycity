@@ -182,3 +182,59 @@ describe('the Motion button', () => {
     expect(outside).toBe(0)
   })
 })
+
+/** A sign counting down to a platform's stages (ADR 0228), in the Motion preview as in the game. */
+describe('a countdown in the preview', () => {
+  const setup = () => {
+    const platformSeq: ComponentData = {
+      id: 'seq',
+      type: SEQUENCE,
+      params: {
+        name: '',
+        clock: 'shared',
+        axes: 'object',
+        loop: 'restart',
+        times: 0,
+        offset: 0,
+        stages: [
+          stage({ id: id(), kind: 'wait', seconds: 5 }),
+          stage({ id: id(), kind: 'fade', to: 1, timing: secs(1), ease: 'linear' }),
+          stage({ id: id(), kind: 'wait', seconds: 3 }),
+          stage({ id: id(), kind: 'fade', to: 0, timing: secs(1), ease: 'linear' }),
+        ],
+      },
+    }
+    const sign: ComponentData[] = [
+      { id: 't', type: 'Text', params: { text: 'Watch the platform' } },
+      { id: 'cd', type: 'Countdown', params: { sequence: { node: 'p', component: 'seq' }, rows: [{ stage: 2, text: 'Appears in {t}' }, { stage: 4, text: 'Gone in {t}' }] } },
+    ]
+    return docOf([node('p', [...box, platformSeq]), node('s', sign)])
+  }
+
+  it('says the next stage’s words while the clock runs, and nothing of its own once stopped', () => {
+    const doc = setup()
+    expect(doc.posesAt(0, { sequences: true })[1]!.text).toBe('Appears in 5.0')
+    expect(doc.posesAt(6000, { sequences: true })[1]!.text).toBe('Gone in 3.0')
+    expect(doc.posesAt(6000)[1]!.text, 'the clock stopped: the Text’s own').toBeUndefined()
+  })
+
+  it('reaches the sign’s text as the preview poses, and gives it back when it stops', () => {
+    const doc = setup()
+    const said: (string | null)[] = []
+    const preview = createMotionPreview({
+      doc: () => doc,
+      groupAt: () => new THREE.Group(),
+      inspectorSync: () => {},
+      renderStatus: () => {},
+      toolbarRender: () => {},
+      setText: (i, words) => {
+        if (i === 1) said.push(words)
+      },
+    })
+    preview.setPlaying(true)
+    preview.advance(4950)
+    expect(said.at(-1)).toBe('Appears in 0.1')
+    preview.setPlaying(false)
+    expect(said.at(-1)).toBeNull()
+  })
+})

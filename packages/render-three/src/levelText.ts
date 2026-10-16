@@ -25,7 +25,7 @@ export const textStyleOf = (desc: TextDesc, fontUrl: FontUrlOf = () => null): Pa
 
 /** The level's texts, drawn: posed from the loader's items every frame, as `addLights` poses its lights. */
 export interface LevelTexts {
-  /** Copy each item's pose, scale, visibility and fade onto its mesh. */
+  /** Copy each item's pose, scale, visibility and fade onto its mesh, and its words when they changed (a countdown, ADR 0228). */
   sync: () => void
   /**
    * How much of an item the game lets show, 0 to 1, on top of its own fade (ADR 0213) — a sign a game fades in and
@@ -38,10 +38,10 @@ export interface LevelTexts {
 }
 
 export const addTexts = (scene: THREE.Scene, items: readonly TextItem[], fontUrl: FontUrlOf = () => null): LevelTexts => {
-  const drawn: { item: TextItem; text: WorldText }[] = items.map((item) => {
+  const drawn: { item: TextItem; text: WorldText; said: string }[] = items.map((item) => {
     const text = createText(textStyleOf(item, fontUrl))
     scene.add(text.object)
-    return { item, text }
+    return { item, text, said: item.text }
   })
   const shown = new Map<TextItem, number>()
   const byItem = new Map(drawn.map((d) => [d.item, d]))
@@ -54,6 +54,11 @@ export const addTexts = (scene: THREE.Scene, items: readonly TextItem[], fontUrl
   const sync = (): void => {
     for (const d of drawn) {
       const { item, text } = d
+      // Laid out again only when the words change — a countdown's, ten times a second at most.
+      if (item.text !== d.said) {
+        d.said = item.text
+        text.set({ text: item.text })
+      }
       const o = text.object
       o.position.set(item.position.x, item.position.y, item.position.z)
       o.quaternion.set(item.rotation.x, item.rotation.y, item.rotation.z, item.rotation.w)

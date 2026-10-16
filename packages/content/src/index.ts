@@ -38,7 +38,9 @@ export type { ParamChecker, TreeContext } from './validate'
 export { applyOp, applyBatch, invertOp, touchedRefs, refKey, isInherited, OpError } from './ops'
 export type { Op, OpBody, OpKind, NodeRef, OwnRef, InheritedRef } from './ops'
 export { instantiateLevel } from './loader'
-export { AT_REST_POSE, EASES, SELF, TOP_FRAME, UNMOVED, channelsOf, combineSequences, compileSequence, easeAt, restartsBetween, sampleSequence, sequenceTime } from './sequence'
+export { AT_REST_POSE, EASES, SELF, TOP_FRAME, UNMOVED, channelsOf, combineSequences, compileSequence, easeAt, restartsBetween, sampleSequence, sequenceTime, untilStage } from './sequence'
+export { COUNTDOWN, countdownOf, countdownSeconds, countdownText } from './countdown'
+export type { CountdownDesc, CountdownRow } from './countdown'
 export {
   diffStages,
   readStages,

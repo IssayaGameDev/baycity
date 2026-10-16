@@ -19,6 +19,7 @@ import {
 } from './sequence'
 import { SEQUENCE, sequenceOf } from './sequenceData'
 import { textOf, type TextDesc } from './text'
+import { countdownOf, countdownText, type CountdownDesc } from './countdown'
 import { drivenComponents, settleDrives } from './drives'
 import { refPathOf } from './refPath'
 import {
@@ -139,6 +140,8 @@ export interface WorldLight {
  * renderer makes the mesh. The pose is mutated by `update`/`render`, so a sign on a moving platform rides it.
  */
 export interface TextItem extends TextDesc {
+  /** What it says: the `Text`'s, or a `Countdown`'s on the node at the last `update` (ADR 0228). */
+  text: string
   /** The node that owns it. */
   readonly node: string
   /** The node's origin: the text block is centred on it. */
@@ -823,6 +826,21 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
     if (text !== undefined && writes !== undefined) Object.assign(text, writes)
   }
 
+  /**
+   * Each `Countdown` on a node with a text (ADR 0228), its sequence found from its node as any reference is and
+   * compiled once. `update` writes what it says on the same clocks the sequences are posed at.
+   */
+  const countdowns: { item: TextItem; desc: CountdownDesc; compiled: CompiledSequence | undefined; own: string }[] = []
+  for (const node of allNodes) {
+    const item = textByNode.get(node)
+    const desc = countdownOf(node.components)
+    if (item === undefined || desc === undefined) continue
+    const ref = desc.sequence
+    const holder = ref === null ? undefined : findNode(node, ref.node)
+    const c = holder?.components.find((x) => x.type === SEQUENCE && x.enabled !== false && (ref === null || ref.component === '' || x.id === ref.component))
+    countdowns.push({ item, desc, compiled: c === undefined ? undefined : compileSequence(sequenceOf(c)), own: item.text })
+  }
+
   let primed = false
 
   const pose = (body: PhysicsBody, position: Vec3, rotation: Quat): void => {
@@ -887,6 +905,7 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
     const clocks = clocksAt(nowMs)
     const before = lastClocks
     lastClocks = clocks
+    for (const k of countdowns) k.item.text = countdownText(k.desc, k.compiled, clocks) ?? k.own
     // Parents come before their children in `frames`, so a cut above has been decided by the time one below asks.
     for (const f of frames) {
       if (!f.animated) continue

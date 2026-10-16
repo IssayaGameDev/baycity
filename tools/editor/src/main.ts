@@ -899,6 +899,7 @@ const motion = createMotionPreview({
   inspectorSync: () => inspectorSync(),
   renderStatus: () => renderStatus(),
   toolbarRender: () => toolbar.render(),
+  setText: (i, words) => meshes.setTextAt(i, words),
 })
 
 /**

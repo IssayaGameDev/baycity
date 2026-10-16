@@ -14,6 +14,7 @@ import {
   THREE,
   type AssetRuntime,
   type LightDesc,
+  type WorldText,
 } from '@mp/render-three'
 
 import type { Doc } from './editorDoc'
@@ -73,6 +74,8 @@ export interface ItemMeshes {
   all: () => readonly THREE.Group[]
   /** A group's mesh holder — its own meshes, not its child items, which are siblings of it. */
   holderOf: (g: THREE.Group) => THREE.Group
+  /** What item `i`'s text says: these words, or its own with `null` — a countdown in the Motion preview (ADR 0228). */
+  setTextAt: (i: number, words: string | null) => void
   /** Rebuild every group from the document. */
   buildAll: () => void
   /** Rebuild one item's own meshes. */
@@ -146,6 +149,8 @@ export const createItemMeshes = (host: ItemMeshHost): ItemMeshes => {
 
   /** A node's text mesh (ADR 0189) owns troika's geometry and its own material, freed by its own call. */
   const texts = new WeakMap<THREE.Object3D, () => void>()
+  /** An item's text, by its group, and what it says now: its own words, or a countdown's in the preview (ADR 0228). */
+  const spoken = new WeakMap<THREE.Group, { text: WorldText; own: string; said: string }>()
 
   const disposeMeshes = (g: THREE.Object3D): void => {
     for (const child of [...g.children]) {
@@ -294,6 +299,7 @@ export const createItemMeshes = (host: ItemMeshHost): ItemMeshes => {
 
   /** `slotFree`: whether a shadow is still to be had at this point in document order — asked only of a light wanting one. */
   const buildItemMeshes = (g: THREE.Group, i: number, slotFree: () => boolean): void => {
+    spoken.delete(g)
     const open = host.doc()
     if (open === null) return
     const holder = meshHolderOf(g)
@@ -389,6 +395,7 @@ export const createItemMeshes = (host: ItemMeshHost): ItemMeshes => {
       text.object.scale.copy(ws)
       holder.add(text.object)
       texts.set(text.object, text.dispose)
+      spoken.set(g, { text, own: writes.text, said: writes.text })
       if (fades) fading.push({ mat: text.material, base: 1, from: text.material })
     }
 
@@ -598,6 +605,15 @@ export const createItemMeshes = (host: ItemMeshHost): ItemMeshes => {
     rebuildSubtree: rebuildSubtreeMeshes,
     buildMarkers,
     clearMarkers: () => disposeMeshes(markerGroup),
+    setTextAt: (i, words) => {
+      const g = instanceGroups[i]
+      const s = g === undefined ? undefined : spoken.get(g)
+      if (s === undefined) return
+      const want = words ?? s.own
+      if (want === s.said) return
+      s.said = want
+      s.text.set({ text: want })
+    },
     dispose: disposeMeshes,
     cells: cellsToggle,
     setCells: (on) => void (showCells = on),

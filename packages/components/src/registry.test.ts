@@ -60,6 +60,7 @@ describe('the built-in registry', () => {
       'Bumper',
       'Sequence',
       'Boss',
+      'Countdown',
     ])
   })
 

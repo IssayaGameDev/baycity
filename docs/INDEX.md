@@ -278,5 +278,6 @@ why matters.
 | [0225](adr/0225-the-balance-tab.md) | The Balance tab: the simulated run against the targets |
 | [0226](adr/0226-a-balance-model-rules-in-numbers-out.md) | A balance model: rules in, numbers out |
 | [0227](adr/0227-a-wireframe-view.md) | A wireframe view |
+| [0228](adr/0228-a-countdown-to-a-sequence.md) | A countdown to a sequence's stages |
 
 `Design archive/` holds superseded design material and is not maintained.

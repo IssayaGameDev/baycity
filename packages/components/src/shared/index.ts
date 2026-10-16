@@ -2,6 +2,7 @@ import { ComponentError } from '../params'
 import type { AnyComponentDef } from '../registry'
 import { Boss } from './boss'
 import { Bumper } from './bumper'
+import { Countdown } from './countdown'
 import { Hazard } from './hazard'
 import { Sequence } from './sequence'
 
@@ -18,7 +19,7 @@ import { Sequence } from './sequence'
  * hazards kill once; two bumpers resolve to the stronger, which is the same as deleting the weaker).
  * Colliders are the repeatable ones. Reversible if a rule ever grows a per-copy parameter that stacks.
  */
-export const SHARED_COMPONENTS = [Hazard, Bumper, Sequence, Boss]
+export const SHARED_COMPONENTS = [Hazard, Bumper, Sequence, Boss, Countdown]
 
 /**
  * The components every game *could* have, looked up by name (ADR 0077).
