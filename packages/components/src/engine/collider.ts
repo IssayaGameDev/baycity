@@ -28,9 +28,10 @@ export const Collider = defineComponent({
      */
     trigger: { kind: 'bool', default: false, label: 'trigger' },
     /**
-     * Grip (ADR 0229): Rapier's friction, which a loose object slides by — and the player too, whose speeding up and
-     * braking scale with it below 0.5, and whom a slippery slope pulls down. 0.5 is the grip every surface had
-     * before, so nothing authored changes; above it, a player grips no better than that.
+     * Grip (ADR 0229, 0230): Rapier's friction, which a loose object slides by — and the player too, whose speeding up
+     * and braking scale with it below 0.5 (never under a tenth while pushing a direction), and whom a slippery slope
+     * pulls down. 0.5 is the grip every surface had before, so nothing authored changes; above it, a player grips no
+     * better than that.
      */
     friction: { kind: 'number', default: 0.5, min: 0, max: 2, step: 0.05, label: 'friction', when: { param: 'trigger', is: [false] } },
     /** Bounciness, 0 to 1 (ADR 0229): the share of a landing's speed that throws a player or an object back up. */

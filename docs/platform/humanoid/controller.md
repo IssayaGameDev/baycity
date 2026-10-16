@@ -185,13 +185,14 @@ synthesised deck contact, a surface nobody set.
 
 | | |
 | --- | --- |
-| grip | `min(1, friction ÷ DEFAULT_FRICTION)`; the ground's approach rate × grip, speeding up and braking alike |
-| slope | grip < 1: `g·n_y·(n_x, n_z)` added each slice **before** the approach, so grip holds against it; a slide where it cannot. Speed may then pass Max Speed downhill |
-| bounce | landing (`!wasGrounded && grounded`, `vy < 0`) on `restitution e > 0`: `bounce = riseSpeedFor(e²·dropHeightFor(−vy))` — the height the fall came from on this tuning's curve (apex window, `fallGravityScale`), and the take-off that rises `e²` of it; spent next step, `leaving`; ≥ `MIN_BOUNCE` 1 m/s |
+| held | `min(1, friction ÷ DEFAULT_FRICTION)`: what the floor alone holds with — the approach rate × `held` once the input is let go |
+| grip | `MIN_GRIP + (1 − MIN_GRIP)·held`, `MIN_GRIP` 0.1 (ADR 0230): the approach rate × `grip` while a direction is pushed, so a frictionless floor still steers, slowly |
+| slope | held < 1: `g·n_y·(n_x, n_z)` added each slice **before** the approach, so the floor holds against it; a slide where it cannot. Speed may then pass Max Speed downhill |
+| bounce | landing (`!wasGrounded && grounded`, `vy < 0`) on `restitution e > 0`: `bounce = riseSpeedFor(e²·dropHeightFor(−vy))` — the height the fall came from on this tuning's curve (apex window, `fallGravityScale`), and the take-off that rises `e²` of it; spent next step, `leaving`; ≥ `MIN_BOUNCE` 1 m/s. The floor is `under`, else a probe from the tick's start reaching `−applied.y` further — a fast fall lands on a floor the first probe could not reach, and the move lands only at the world's step |
 | defaults | grip 1 and `e` 0 run none of it: a floor nobody set is exactly what it was |
 
-`surfaces.test.ts`: ice slower to start and to stop, defaults and grippier floors identical to an unset one, a
-frictionless 20° slope sliding, a 0.8 floor rising to 1.92 m of a 3 m drop, a jump adding to it, the probe's surface.
+`surfaces.test.ts`: ice slower to start and to stop, a frictionless floor turned round on and glided on, defaults and grippier floors identical to an unset one, a
+frictionless 20° slope sliding, a 0.8 floor rising to 1.92 m of a 3 m drop, every landing from 2 to 16 m bouncing, a jump adding to it, the probe's surface.
 
 ## `createLocomotion` / `LOCOMOTION_DEF` (`locomotion.ts`)
 

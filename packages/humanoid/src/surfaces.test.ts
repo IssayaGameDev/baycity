@@ -66,6 +66,22 @@ describe('grip', () => {
     expect(ice.stopping, 'slides on much further').toBeGreaterThan(5 * plain.stopping)
   })
 
+  it('on a frictionless floor, still steers and turns round — slowly — and glides on when let go (ADR 0230)', () => {
+    const world = floorWorld({ friction: 0 })
+    const c = standing(world)
+    // Running one way, as from landing on it.
+    c.vx = DEFAULT_TUNING.moveSpeed
+    steps(world, c, { moveX: -1, moveZ: 0, jump: false }, ticks(0.05))
+    expect(c.vx, 'pushing back slows it').toBeLessThan(DEFAULT_TUNING.moveSpeed)
+    expect(c.vx, 'but not at once').toBeGreaterThan(0)
+    steps(world, c, { moveX: -1, moveZ: 0, jump: false }, ticks(2))
+    expect(c.vx, 'turned round').toBeLessThan(0)
+    const going = c.vx
+    steps(world, c, STILL, ticks(1))
+    expect(c.vx, 'let go: nothing stops it').toBeCloseTo(going, 6)
+    world.free()
+  })
+
   it('is today’s on a floor nobody set, and on one set to the default or grippier', () => {
     const plain = coast({})
     expect(coast({ friction: 0.5 })).toEqual(plain)
@@ -118,6 +134,25 @@ describe('bounciness', () => {
     expect(bounce).toBeGreaterThan(1.92 - 0.15)
     expect(bounce).toBeLessThan(1.92 + 0.15)
     expect(reboundOn(0.4), 'less bouncy, lower').toBeLessThan(bounce)
+  })
+
+  it('bounces every landing, from any height — a fast fall lands on a floor its tick’s first probe could not reach yet', () => {
+    // Kodjo's report: a bounce or two, then a landing that stopped dead. From 4.59 m the first one did.
+    const dead: string[] = []
+    for (let k = 0; k < 40; k++) {
+      const h = 2 + k * 0.37
+      const world = floorWorld({ restitution: 0.8 })
+      const c = addCharacter(world, vec3(0, h + 0.1 + STAND, 0))
+      for (let i = 0; i < ticks(6); i++) {
+        const was = c.grounded
+        const falling = -c.vy
+        stepCharacter(c, STILL, TICK_DT, DEFAULT_TUNING)
+        world.step(TICK_DT)
+        if (!was && c.grounded && c.bounce === 0 && falling * 0.8 > 3) dead.push(`${h.toFixed(2)} m, tick ${i}, ${falling.toFixed(1)} m/s`)
+      }
+      world.free()
+    }
+    expect(dead).toEqual([])
   })
 
   it('adds to a jump taken as it lands', () => {

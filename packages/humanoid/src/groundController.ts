@@ -45,6 +45,8 @@ const SETTLE_DT = 1 / 30
  * measured at 0.020 m. Seating to the arrival margin instead would hold every rider a visible 5 cm clear.
  */
 const SEAT_OFFSET = 0.02
+/** The least grip a player pushes with, on a frictionless floor (ADR 0230, Kodjo's call): a tenth of a floor nobody set. */
+const MIN_GRIP = 0.1
 /** The smallest bounce worth one, m/s up (ADR 0229): a few centimetres' hop. Under it a bouncy surface lets the player settle. */
 const MIN_BOUNCE = 1
 
@@ -586,12 +588,17 @@ export const stepCharacter = (
     }
   }
   /**
-   * **What the ground is made of** (ADR 0229, Kodjo's call: the player feels a surface as a loose object does). Its
-   * grip as a share of a surface nobody set — never more, so a grippy floor is today's floor — scales speeding up
-   * and braking alike, and below 1 a slope pulls downhill against it. 1 off the ground, and on a deck synthesised
-   * below, which carries no surface.
+   * **What the ground is made of** (ADR 0229, Kodjo's call: the player feels a surface as a loose object does): its
+   * friction as a share of a surface nobody set — never more, so a grippy floor is today's floor. 1 off the ground, and
+   * on a deck synthesised below, which carries no surface.
+   *
+   * - `held` — what the floor alone holds with: braking once the input is let go, and against a slope's pull. 0 on a
+   *   frictionless floor, which you glide on and slide down.
+   * - `grip` — what the player pushes with (ADR 0230, Kodjo's call): never under `MIN_GRIP`, so even on a
+   *   frictionless floor they steer and turn round, slowly, as ice is in a game rather than an air-hockey table.
    */
-  const grip = under === undefined ? 1 : Math.min(1, Math.max(0, (under.friction ?? DEFAULT_FRICTION) / DEFAULT_FRICTION))
+  const held = under === undefined ? 1 : Math.min(1, Math.max(0, (under.friction ?? DEFAULT_FRICTION) / DEFAULT_FRICTION))
+  const grip = MIN_GRIP + (1 - MIN_GRIP) * held
   /** Footing as of last tick, for telling a landing this tick. */
   const wasGrounded = state.grounded
   /** World height of the soles, as of the start of this tick. The probe's contact is compared against it. */
@@ -718,11 +725,11 @@ export const stepCharacter = (
     if (state.grounded) {
       /**
        * A slippery slope pulls downhill (ADR 0229): gravity's part along it, `g·sinθ`, laid flat — `g·n_y·(n_x, n_z)`
-       * from the surface's normal. Added **before** the approach below, so grip holds against it: where the grip's
-       * rate covers it nothing moves, and where it does not the player slides, as a box on ice does. Only below full
-       * grip, so a floor nobody set is exactly what it was.
+       * from the surface's normal. Added **before** the approach below, so the floor holds against it: where its rate
+       * covers it nothing moves, and where it does not the player slides, as a box on ice does. Only below full grip,
+       * so a floor nobody set is exactly what it was.
        */
-      if (grip < 1 && under !== undefined) {
+      if (held < 1 && under !== undefined) {
         state.vx += tuning.gravity * under.normal.y * under.normal.x * h
         state.vz += tuning.gravity * under.normal.y * under.normal.z * h
       }
@@ -740,8 +747,9 @@ export const stepCharacter = (
        */
       const along = now < 1e-4 ? 1 : ((targetX - state.vx) * state.vx + (targetZ - state.vz) * state.vz) / now
       const time = hasInput ? tuning.groundAccelTime : tuning.groundStopTime
-      // Grip scales both ways (ADR 0229, Kodjo's call): on ice you are slow to get going and slow to stop.
-      const rate = Math.min(tuning.moveSpeed / Math.max(time, 1e-3), groundCeiling(along >= 0)) * grip
+      // On ice you are slow to get going and slow to stop (ADR 0229, Kodjo's call): pushing a direction, by the player's
+      // grip; let go, by what the floor holds with (ADR 0230).
+      const rate = Math.min(tuning.moveSpeed / Math.max(time, 1e-3), groundCeiling(along >= 0)) * (hasInput ? grip : held)
       approachVec(state, targetX, targetZ, rate * h)
     } else if (hasInput) {
       const rate = Math.min(accel * tuning.airControl, scaleCeiling(tuning.airMaxAccel, tuning))
@@ -1068,10 +1076,11 @@ export const stepCharacter = (
    * squared times the height the fall came from, so a higher drop bounces higher and each bounce is that share of the
    * last, until it is too small to be one. Worked on this tuning's own gravity curve, which falls heavier than it
    * rises — the bounce's share of the speed alone would rise higher than it fell. The surface is read where the feet
-   * came down, which a fast fall reaches within the tick it lands.
+   * came down: a fast fall can land on a floor the tick's first probe was still too high to reach, and the move is
+   * applied only when the world steps, so the probe looks from where the tick began, as far down as it moved.
    */
   if (!wasGrounded && state.grounded && state.vy < 0) {
-    const floor = under ?? state.body.probeGround()
+    const floor = under ?? state.body.probeGround(Math.max(0, -applied.y))
     const e = floor?.restitution ?? 0
     const up = e > 0 ? riseSpeedFor(e * e * dropHeightFor(-state.vy, tuning), tuning) : 0
     if (up >= MIN_BOUNCE) state.bounce = up

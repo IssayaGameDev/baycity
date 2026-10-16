@@ -280,5 +280,6 @@ why matters.
 | [0227](adr/0227-a-wireframe-view.md) | A wireframe view |
 | [0228](adr/0228-a-countdown-to-a-sequence.md) | A countdown to a sequence's stages |
 | [0229](adr/0229-the-player-feels-the-surface.md) | The player feels what a surface is made of |
+| [0230](adr/0230-ice-keeps-a-little-grip.md) | Ice keeps a little grip |
 
 `Design archive/` holds superseded design material and is not maintained.
